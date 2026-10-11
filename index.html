@@ -1,0 +1,3916 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Weekly — Task Console</title>
+<meta name="app-version" content="2026-10-09a">
+<meta name="app-notes" content="Reminder popups, period heads-up and check-in notices, event end times, editing completed tasks, backup and restore, and a New Task button that opens the full form.">
+<script>
+  // Runs before anything else in <head>, including the external libraries
+  // below (which block parsing while they load) — otherwise the theme
+  // attribute wouldn't be set until after those finish fetching, and the
+  // page would flash the default theme first on every load. Paired with
+  // html[data-theme="..."] override rules in the stylesheet below.
+  (function(){
+    try{
+      var raw = localStorage.getItem('weekly-app:meta');
+      if(raw){
+        var theme = JSON.parse(raw).theme;
+        if(theme && theme !== 'moonlit'){ document.documentElement.setAttribute('data-theme', theme); }
+      }
+    }catch(e){ /* stylesheet default (Moonlit) applies; JS load will still correct it */ }
+  })();
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght,SOFT@0,9..144,300..900,0..100;1,9..144,300..900,0..100&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js" defer></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" defer></script>
+<style>
+  :root{
+    /* Moonlit / lunar: a cool, deep indigo-slate base with a pearlescent
+       blue-white accent — warmth (rose/gold) now appears only as a rare,
+       deliberate hint, not the app's identity. Kept clearly saturated
+       rather than near-black, so the indigo actually reads as a color. */
+    --bg:#12142C;
+    --surface:#1B1E3F;
+    --surface-2:#242850;
+    --border:#333865;
+    --text:#FFFFFF;
+    --text-dim:#D9DCF7;
+    --text-faint:#ADB3E0;
+    --accent:#C9D9F5;
+    --accent-dim:#5A6592;
+    --accent-glow:rgba(201,217,245,0.30);
+    --on-accent:#12142A;
+    --danger:#E8768F;
+    --danger-glow:rgba(232,118,143,0.30);
+    --success:#7DD3B8;
+    --phase-follicular:#4FD1C5;
+    --phase-ovulation:#C792EA;
+    --phase-luteal:#D4A574;
+    --trimester-1:#7BAAF7;
+    --trimester-2:#4FD1C5;
+    --trimester-3:#D4A574;
+    --plot-rose:#E0A8C0;
+    --plot-rose-glow:rgba(224,168,192,0.30);
+    --plot-lavender:#B8A8E8;
+    --radius:10px;
+    --display: Georgia, 'Iowan Old Style', 'Palatino Linotype', serif;
+    --brand: 'Fraunces', Georgia, 'Iowan Old Style', serif;
+    --body: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    --mono: ui-monospace, 'SF Mono', 'JetBrains Mono', 'Cascadia Code', Menlo, Consolas, monospace;
+  }
+  /* Theme overrides — Moonlit is the :root default above; these apply the
+     instant html[data-theme] is set, whether by the head-script fast path
+     or by applyTheme() at runtime. Kept in sync with the THEMES object in
+     the app script; if you add a theme there, mirror it here too. */
+  html[data-theme="moonstone"]{
+    --bg:#F5F5FB; --surface:#FCFCFF; --surface-2:#E8E8F3; --border:#C6C6DE;
+    --text:#23232E; --text-dim:#52526B; --text-faint:#63637D;
+    --accent:#5468BE; --accent-dim:#A8B2DE; --accent-glow:rgba(84,104,190,0.22); --on-accent:#FFFFFF;
+    --danger:#A02D4E; --danger-glow:rgba(160,45,78,0.18); --success:#1F6B4A;
+    --phase-follicular:#2F9E90; --phase-ovulation:#8F6BA8; --phase-luteal:#B5793A;
+    --trimester-1:#4A7AD1; --trimester-2:#2F9E90; --trimester-3:#B5793A;
+    --plot-rose:#8F3A63; --plot-rose-glow:rgba(143,58,99,0.18); --plot-lavender:#6B7BC7;
+  }
+  html[data-theme="sage"]{
+    --bg:#F2EAD9; --surface:#F8F2E5; --surface-2:#E8DCC0; --border:#B89F68;
+    --text:#2E2318; --text-dim:#5C4A32; --text-faint:#6E5A3E;
+    --accent:#5F7052; --accent-dim:#9CAD8F; --accent-glow:rgba(95,112,82,0.22); --on-accent:#FFFFFF;
+    --danger:#A02D4E; --danger-glow:rgba(160,45,78,0.18); --success:#3D6B4A;
+    --phase-follicular:#6B8A6E; --phase-ovulation:#8A6B8F; --phase-luteal:#B5883A;
+    --trimester-1:#6B7A94; --trimester-2:#6B8A6E; --trimester-3:#B5883A;
+    --plot-rose:#8A3F50; --plot-rose-glow:rgba(138,63,80,0.20); --plot-lavender:#8A6B8F;
+  }
+  html[data-theme="plum"]{
+    --bg:#241220; --surface:#331A2C; --surface-2:#3F2136; --border:#5C2E4C;
+    --text:#FBF1F6; --text-dim:#E0B8D0; --text-faint:#C08FAE;
+    --accent:#E85FA0; --accent-dim:#8A4468; --accent-glow:rgba(232,95,160,0.28); --on-accent:#2A1420;
+    --danger:#F0879E; --danger-glow:rgba(240,135,158,0.28); --success:#8FE0BE;
+    --phase-follicular:#5FCFC0; --phase-ovulation:#D48FE0; --phase-luteal:#E0A874;
+    --trimester-1:#8FA8E8; --trimester-2:#5FCFC0; --trimester-3:#E0A874;
+    --plot-rose:#F0A8C8; --plot-rose-glow:rgba(240,168,200,0.30); --plot-lavender:#C8A8E8;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  html,body{height:100%;}
+  body{
+    background:
+      radial-gradient(ellipse 900px 500px at 15% -10%, rgba(201,217,245,0.06), transparent 60%),
+      var(--bg);
+    color:var(--text);
+    font-family:var(--body);
+    min-height:100vh;
+    -webkit-font-smoothing:antialiased;
+  }
+  ::selection{ background:var(--accent-glow); }
+  button{ font-family:inherit; cursor:pointer; }
+  input,select,textarea{ font-family:inherit; }
+  a{ color:inherit; }
+
+  /* ---------- App shell ---------- */
+  #app{ max-width:1180px; margin:0 auto; padding:28px 24px 80px; }
+
+  header.top{
+    display:flex; align-items:flex-end; justify-content:space-between;
+    padding-bottom:18px; border-bottom:1px solid var(--border);
+    margin-bottom:22px; flex-wrap:wrap; gap:14px;
+  }
+  .brand{ display:flex; align-items:baseline; gap:8px; cursor:pointer; }
+  .brand h1{
+    font-family:var(--brand); font-weight:600; font-size:32px;
+    font-variation-settings:"SOFT" 40, "opsz" 60;
+    letter-spacing:-0.01em; color:var(--text);
+  }
+  .brand .dot{ color:var(--accent); font-size:0.55em; vertical-align:middle; }
+  .brand .sub{ font-family:var(--mono); font-size:11px; color:var(--text-faint); letter-spacing:1.5px; text-transform:uppercase; }
+  .rename-hint{ font-size:13px; color:var(--text-faint); opacity:0; transition:opacity .15s; }
+  .brand:hover .rename-hint{ opacity:1; }
+  .appname-input{
+    font-family:var(--brand); font-weight:600; font-size:32px;
+    font-variation-settings:"SOFT" 40, "opsz" 60; letter-spacing:-0.01em;
+    background:transparent; border:none; border-bottom:2px solid var(--accent); color:var(--text);
+    outline:none; max-width:280px; padding:0 2px;
+  }
+
+  nav.tabs{ display:flex; gap:6px; background:var(--surface); border:1px solid var(--border); border-radius:999px; padding:4px; }
+  nav.tabs button{
+    border:none; background:transparent; color:var(--text-dim);
+    padding:8px 18px; border-radius:999px; font-size:13.5px; font-weight:600;
+    transition:background .15s, color .15s;
+  }
+  nav.tabs button.active{ background:var(--accent); color:var(--on-accent); }
+
+  .bell-btn{
+    display:flex; align-items:center; gap:8px; background:var(--surface);
+    border:1px solid var(--border); color:var(--text-dim); border-radius:999px;
+    padding:8px 14px; font-size:12.5px; font-family:var(--mono);
+  }
+  .bell-btn.on{ color:var(--accent); border-color:var(--accent-dim); }
+
+  /* ---------- For the plot: deliberately a different, softer register
+     than the rest of the app — this is the one part that isn't about
+     getting things done. ---------- */
+  /* ---------- Settings ---------- */
+  .settings-btn{
+    background:var(--surface); border:1px solid var(--border); border-radius:12px;
+    width:44px; height:44px; font-size:19px; display:flex; align-items:center; justify-content:center;
+    color:var(--text-dim); flex-shrink:0;
+  }
+  .settings-btn:hover{ border-color:var(--accent-dim); }
+  .settings-modal{ max-width:420px; width:100%; }
+  .settings-section{ margin-bottom:20px; padding-bottom:18px; border-bottom:1px solid var(--border); }
+  .settings-section:last-of-type{ border-bottom:none; margin-bottom:8px; padding-bottom:0; }
+  .settings-section-title{
+    font-family:var(--mono); font-size:10.5px; color:var(--text-faint); letter-spacing:1px;
+    text-transform:uppercase; margin-bottom:10px;
+  }
+  .settings-row{ display:flex; align-items:center; justify-content:space-between; gap:10px; font-size:13px; color:var(--text-dim); }
+  .settings-subsection-title{
+    font-family:var(--mono); font-size:9.5px; color:var(--text-faint); letter-spacing:0.8px;
+    text-transform:uppercase; margin:14px 0 8px;
+  }
+  .sound-option-grid{ display:flex; flex-direction:column; gap:6px; }
+  .sound-option{
+    display:flex; align-items:center; gap:10px; background:var(--surface-2); border:1px solid var(--border);
+    border-radius:8px; padding:9px 12px; text-align:left; width:100%;
+  }
+  .sound-option:hover{ border-color:var(--accent-dim); }
+  .sound-option.active{ border-color:var(--accent); background:var(--accent-glow); }
+  .sound-option-radio{
+    width:14px; height:14px; border-radius:50%; border:1.5px solid var(--border); flex-shrink:0;
+    background:var(--surface);
+  }
+  .sound-option-radio.checked{ border-color:var(--accent); background:var(--accent); box-shadow:inset 0 0 0 3px var(--surface-2); }
+  .sound-option-text{ flex:1; display:flex; flex-direction:column; gap:1px; }
+  .sound-option-label{ font-size:12.5px; color:var(--text); font-weight:600; }
+  .sound-option-desc{ font-size:10.5px; color:var(--text-faint); }
+  .sound-option-play{ color:var(--text-faint); font-size:11px; flex-shrink:0; }
+  .sound-option.active .sound-option-play{ color:var(--accent); }
+  .settings-action-btn{
+    background:var(--accent); color:var(--on-accent); border:none; border-radius:7px;
+    padding:8px 16px; font-size:12.5px; font-weight:700; flex-shrink:0;
+  }
+  .settings-toggle-row{ display:flex; align-items:center; gap:8px; font-size:13.5px; color:var(--text-dim); cursor:pointer; margin-bottom:8px; }
+  .settings-hint{ font-size:11.5px; color:var(--text-faint); line-height:1.6; }
+  .settings-danger-zone{ }
+  .settings-danger-btn{
+    background:transparent; border:1px solid var(--danger); color:var(--danger);
+    border-radius:7px; padding:9px 16px; font-size:12.5px; font-weight:600; margin-top:10px;
+  }
+  .settings-theme-grid{ display:flex; flex-direction:column; gap:4px; }
+  .theme-option{
+    display:flex; align-items:center; gap:10px; background:transparent; border:none;
+    border-radius:8px; padding:7px 8px; font-size:13px; color:var(--text-dim); text-align:left;
+  }
+  .theme-option:hover{ background:var(--surface-2); }
+  .theme-option.active{ background:var(--surface-2); color:var(--text); font-weight:600; }
+  .theme-swatch-preview{
+    width:20px; height:20px; border-radius:50%; border:2px solid; flex-shrink:0;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .theme-swatch-dot{ width:8px; height:8px; border-radius:50%; }
+  .theme-option-label{ flex:1; }
+  .theme-option-check{ color:var(--accent); font-size:12px; }
+
+  .plot-wrap{ position:relative; }
+  .plot-btn{
+    position:relative; overflow:visible;
+    background:radial-gradient(circle at 30% 30%, rgba(232,163,196,0.25), var(--surface));
+    border:1.5px solid var(--plot-rose); border-radius:32% 68% 65% 35% / 40% 35% 65% 60%;
+    width:52px; height:52px; font-size:22px; display:flex; align-items:center; justify-content:center;
+    box-shadow:0 0 0 0 var(--plot-rose-glow); transition:box-shadow .2s, border-radius .4s;
+  }
+  .plot-btn:hover{
+    box-shadow:0 0 16px var(--plot-rose-glow);
+    border-radius:65% 35% 32% 68% / 60% 65% 35% 40%;
+  }
+  @keyframes sparkTwinkle{
+    0%, 100%{ opacity:0; transform:scale(0.4); }
+    50%{ opacity:1; transform:scale(1); }
+  }
+  .plot-spark{
+    position:absolute; width:4px; height:4px; border-radius:50%; background:var(--plot-rose);
+    box-shadow:0 0 6px var(--plot-rose-glow); pointer-events:none;
+    animation: sparkTwinkle 2.6s ease-in-out infinite;
+  }
+  .plot-spark.s1{ top:-4px; left:12px; animation-delay:0s; }
+  .plot-spark.s2{ top:14px; right:-6px; animation-delay:0.9s; }
+  .plot-spark.s3{ bottom:-4px; left:22px; animation-delay:1.7s; }
+  @keyframes popoverBurst{
+    0%{ box-shadow:0 0 0 0 var(--plot-rose-glow), 0 16px 32px rgba(0,0,0,0.5); }
+    35%{ box-shadow:0 0 26px 6px var(--plot-rose-glow), 0 16px 32px rgba(0,0,0,0.5); }
+    100%{ box-shadow:0 0 0 0 rgba(224,168,192,0), 0 16px 32px rgba(0,0,0,0.5); }
+  }
+  .plot-popover.sparkle-burst{ animation: popoverBurst 0.9s ease-out; }
+  .plot-popover{
+    position:absolute; top:calc(100% + 10px); right:0; z-index:80; width:260px;
+    background:linear-gradient(160deg, var(--surface-2), var(--surface));
+    border:1px solid var(--plot-rose); border-radius:12px; padding:16px;
+    box-shadow:0 16px 32px rgba(0,0,0,0.5);
+  }
+  .plot-popover-label{ font-family:var(--mono); font-size:10.5px; color:var(--plot-rose); letter-spacing:1px; text-transform:uppercase; margin-bottom:8px; }
+  .plot-popover-text{ font-family:var(--display); font-size:15px; line-height:1.5; color:var(--text); margin-bottom:14px; }
+  .plot-popover-actions{ display:flex; gap:8px; }
+  .plot-ack-btn{
+    flex:1; background:var(--plot-rose); border:none; color:#2A1420; border-radius:7px;
+    padding:8px; font-size:12px; font-weight:700;
+  }
+  .plot-dismiss-btn{
+    background:transparent; border:1px solid var(--border); color:var(--text-faint);
+    border-radius:7px; padding:8px 10px; font-size:12px;
+  }
+
+  .plot-log-panel{ margin-bottom:22px; }
+  .plot-log-entry{
+    display:flex; align-items:baseline; gap:12px; background:var(--surface); border:1px solid var(--border);
+    border-left:3px solid var(--plot-rose); border-radius:8px; padding:10px 14px; margin-bottom:7px;
+  }
+  .plot-log-date{ font-family:var(--mono); font-size:10.5px; color:var(--plot-rose); flex-shrink:0; width:52px; }
+  .plot-log-text{ font-size:13px; color:var(--text-dim); line-height:1.4; }
+  .plot-log-more{ font-family:var(--mono); font-size:11px; color:var(--text-faint); text-align:center; padding:6px; }
+
+  .search-wrap{ position:relative; flex:1; min-width:160px; max-width:280px; }
+  .search-wrap input{
+    width:100%; background:var(--surface); border:1px solid var(--border); color:var(--text);
+    border-radius:999px; padding:9px 14px 9px 32px; font-size:13px; outline:none;
+  }
+  .search-wrap input:focus{ border-color:var(--accent); }
+  .search-wrap .icon{ position:absolute; left:12px; top:50%; transform:translateY(-50%); color:var(--text-faint); font-size:13px; pointer-events:none; }
+  .search-wrap .clear{
+    position:absolute; right:8px; top:50%; transform:translateY(-50%); background:transparent; border:none;
+    color:var(--text-faint); font-size:14px; padding:2px 6px;
+  }
+
+  /* ---------- Pulse strip (signature element) ---------- */
+  .pulse-wrap{
+    background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
+    padding:16px 18px; margin-bottom:22px; display:flex; align-items:center; gap:18px; flex-wrap:wrap;
+  }
+  .pulse-label{ font-family:var(--mono); font-size:11px; color:var(--text-faint); letter-spacing:1.5px; text-transform:uppercase; white-space:nowrap; }
+  .pulse-track{ flex:1; display:flex; gap:5px; min-width:220px; }
+  .pulse-day{ flex:1; display:flex; flex-direction:column; align-items:center; gap:6px; }
+  .pulse-today-dot{ width:5px; height:5px; border-radius:50%; background:var(--accent); box-shadow:0 0 7px var(--accent-glow); }
+  .pulse-bar-bg{ width:100%; height:34px; background:var(--surface-2); border-radius:5px; position:relative; overflow:hidden; border:1px solid var(--border); }
+  .pulse-day.today .pulse-bar-bg{ border:1.5px solid var(--accent); box-shadow:0 0 0 1px var(--accent-glow), 0 0 12px var(--accent-glow); }
+  .pulse-bar-fill{ position:absolute; bottom:0; left:0; right:0; background:linear-gradient(180deg, var(--success), #3F9C6D); }
+  .pulse-day-label{ font-family:var(--mono); font-size:10px; color:var(--text-faint); }
+  .pulse-day-label.today{ color:var(--accent); font-weight:700; }
+  .pulse-score{ font-family:var(--display); font-size:26px; color:var(--accent); white-space:nowrap; }
+  .pulse-score span{ font-family:var(--mono); font-size:11px; color:var(--text-faint); display:block; text-align:right; }
+  .pulse-legend{ font-family:var(--mono); font-size:10px; color:var(--text-faint); display:flex; align-items:center; gap:5px; white-space:nowrap; }
+  .pulse-legend .sw{ width:8px; height:8px; border-radius:2px; display:inline-block; }
+  .pulse-legend .sw.done{ background:var(--success); }
+  .pulse-legend .sw.today{ border:1.5px solid var(--accent); box-shadow:0 0 6px var(--accent-glow); background:transparent; border-radius:50%; width:6px; height:6px; }
+
+  /* ---------- Reminder banner ---------- */
+  .banner{
+    background:linear-gradient(90deg, rgba(201,217,245,0.14), rgba(201,217,245,0.02));
+    border:1px solid var(--accent-dim); border-radius:var(--radius);
+    padding:14px 18px; margin-bottom:20px; display:flex; align-items:center; justify-content:space-between; gap:14px;
+  }
+  .banner .msg{ font-size:14px; line-height:1.5; }
+  .banner .msg b{ color:var(--accent); }
+  .banner button{ background:transparent; border:1px solid var(--border); color:var(--text-dim); border-radius:6px; padding:6px 12px; font-size:12px; }
+  .habit-banner-actions{ display:flex; gap:8px; flex-shrink:0; }
+  .habit-accept-btn{ background:var(--accent) !important; border:none !important; color:var(--on-accent) !important; font-weight:700; }
+
+  .enable-banner{
+    background:var(--surface); border:1px dashed var(--border); border-radius:var(--radius);
+    padding:12px 16px; margin-bottom:20px; display:flex; align-items:center; justify-content:space-between; gap:14px; font-size:13px; color:var(--text-dim);
+  }
+  .enable-banner button{ background:var(--accent); color:var(--on-accent); border:none; border-radius:6px; padding:7px 14px; font-weight:600; font-size:12.5px; }
+  .enable-banner-note{ display:block; margin-top:5px; font-size:11.5px; color:var(--text-faint); line-height:1.5; }
+
+  /* ---------- Front-page extras: dashboard strip, quick-add, today panel ---------- */
+  .dashboard-strip{
+    display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px;
+    margin-bottom:16px; padding:2px 2px 0;
+  }
+  .dashboard-greeting{ font-size:13.5px; color:var(--text-dim); }
+  .dashboard-greeting b{ color:var(--text); }
+  .dashboard-chips{ display:flex; gap:8px; flex-wrap:wrap; }
+  .stat-chip{
+    background:var(--surface); border:1px solid var(--border); color:var(--text-dim);
+    border-radius:999px; padding:5px 12px; font-family:var(--mono); font-size:11.5px; white-space:nowrap;
+  }
+
+  .quickadd-row{
+    display:flex; align-items:center; gap:10px; background:var(--surface); border:1px solid var(--border);
+    border-radius:var(--radius); padding:10px 14px; margin-bottom:16px;
+  }
+  .quickadd-icon{ color:var(--accent); font-size:16px; font-weight:700; flex-shrink:0; }
+  .quickadd-row input{
+    flex:1; background:transparent; border:none; color:var(--text); font-size:13.5px; outline:none;
+  }
+  .quickadd-btn{ background:var(--accent); color:var(--on-accent); border:none; border-radius:7px; padding:7px 14px; font-weight:700; font-size:12.5px; flex-shrink:0; }
+  .quickadd-full-btn{
+    background:transparent; border:1px solid var(--border); color:var(--text-dim); border-radius:7px;
+    padding:7px 12px; font-weight:600; font-size:12.5px; flex-shrink:0; white-space:nowrap;
+  }
+  .quickadd-full-btn:hover{ border-color:var(--accent-dim); color:var(--text); }
+  @media (max-width:480px){
+    .quickadd-row{ flex-wrap:wrap; }
+    .quickadd-row input{ flex-basis:100%; order:1; }
+    .quickadd-icon{ order:0; }
+    .quickadd-btn, .quickadd-full-btn{ order:2; flex:1; text-align:center; }
+  }
+
+  .today-panel{
+    background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
+    padding:16px 18px; margin-bottom:20px;
+  }
+  .today-panel-header{ display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; }
+  .today-panel-title{ font-family:var(--display); font-size:16px; color:var(--text); }
+  .today-panel-count{ font-family:var(--mono); font-size:11px; color:var(--text-faint); }
+  .today-panel-empty{ color:var(--text-faint); font-size:13px; padding:10px 2px; }
+
+  .type-toggle-row{ display:flex; gap:8px; margin-bottom:16px; }
+  .type-toggle-btn{
+    flex:1; background:var(--surface-2); border:1px solid var(--border); color:var(--text-dim);
+    border-radius:8px; padding:9px; font-size:13px; font-weight:600;
+  }
+  .type-toggle-btn.active{ background:var(--accent); border-color:var(--accent); color:var(--on-accent); }
+
+  .priority-check{
+    display:flex; align-items:center; gap:6px; font-size:12.5px; color:var(--text-dim);
+    margin:-6px 0 13px; cursor:pointer;
+  }
+  .subtask-editor{ }
+  .subtask-edit-list{ margin-bottom:8px; }
+  .subtask-edit-row{
+    display:flex; align-items:center; justify-content:space-between; background:var(--surface-2);
+    border-radius:6px; padding:6px 10px; margin-bottom:5px; font-size:12.5px; color:var(--text-dim);
+  }
+  .subtask-edit-row button{ background:transparent; border:none; color:var(--text-faint); font-size:12px; }
+  .subtask-add-row{ display:flex; gap:6px; }
+  .subtask-add-row input{
+    flex:1; background:var(--bg); border:1px solid var(--border); color:var(--text);
+    border-radius:6px; padding:7px 9px; font-size:12.5px; outline:none;
+  }
+  .subtask-add-row button{
+    background:var(--surface-2); border:1px solid var(--border); color:var(--text-dim);
+    border-radius:6px; padding:0 12px; font-size:14px;
+  }
+
+  .priority-panel{
+    background:var(--surface); border:1px solid var(--accent-dim); border-radius:var(--radius);
+    padding:16px 18px; margin-bottom:20px;
+  }
+  .priority-panel-header{ display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; }
+  .priority-panel-title{ font-family:var(--display); font-size:16px; color:var(--accent); }
+  .priority-panel-count{ font-family:var(--mono); font-size:11px; color:var(--text-faint); }
+
+  .cat-progress-box{ margin-top:18px; padding-top:14px; border-top:1px solid var(--border); }
+  .cat-progress-title{ font-family:var(--mono); font-size:10.5px; color:var(--text-faint); letter-spacing:1px; text-transform:uppercase; margin-bottom:10px; }
+  .cat-progress-row{ margin-bottom:10px; }
+  .cat-progress-label{ display:flex; align-items:center; gap:6px; font-size:12px; color:var(--text-dim); margin-bottom:4px; }
+  .cat-progress-pct{ margin-left:auto; font-family:var(--mono); font-size:10.5px; color:var(--text-faint); }
+  .cat-progress-bar-bg{ height:5px; background:var(--surface-2); border-radius:3px; overflow:hidden; }
+  .cat-progress-bar-fill{ height:100%; border-radius:3px; }
+
+  /* ---------- Layout: sidebar + main ---------- */
+  .layout{ display:grid; grid-template-columns:220px 1fr; gap:24px; align-items:start; }
+  @media (max-width:760px){ .layout{ grid-template-columns:1fr; } }
+
+  .sidebar{ background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:16px; position:sticky; top:20px; }
+  .week-nav{ display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; }
+  .week-nav button{ background:var(--surface-2); border:1px solid var(--border); color:var(--text-dim); border-radius:6px; width:26px; height:26px; }
+  .week-nav .label{ font-family:var(--mono); font-size:11.5px; color:var(--text-dim); text-align:center; }
+
+  .cat-list{ display:flex; flex-direction:column; gap:2px; margin-bottom:12px; }
+  .cat-item{
+    display:flex; align-items:center; justify-content:space-between; padding:8px 10px; border-radius:6px;
+    font-size:13px; color:var(--text-dim); cursor:pointer;
+  }
+  .cat-item:hover{ background:var(--surface-2); }
+  .cat-item.active{ background:var(--surface-2); color:var(--text); }
+  .cat-item .count{ font-family:var(--mono); font-size:11px; color:var(--text-faint); }
+  .cat-swatch{ width:8px; height:8px; border-radius:50%; display:inline-block; margin-right:8px; }
+
+  .add-cat{ display:flex; gap:6px; margin-top:8px; }
+  .add-cat input{
+    flex:1; background:var(--bg); border:1px solid var(--border); color:var(--text);
+    border-radius:6px; padding:7px 9px; font-size:12.5px; outline:none;
+  }
+  .add-cat button{ background:var(--surface-2); border:1px solid var(--border); color:var(--text-dim); border-radius:6px; padding:0 10px; font-size:16px; }
+
+  .new-task-btn{
+    width:100%; margin-top:14px; background:var(--accent); color:var(--on-accent); border:none;
+    border-radius:7px; padding:10px; font-weight:700; font-size:13px; letter-spacing:0.3px;
+  }
+
+  /* ---------- Mini calendar ---------- */
+  .calendar-placement-row{
+    display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;
+    font-family:var(--mono); font-size:11px; color:var(--text-faint);
+  }
+  .calendar-placement-select{
+    background:var(--surface-2); border:1px solid var(--border); color:var(--text-dim);
+    border-radius:6px; padding:4px 8px; font-family:var(--mono); font-size:11px; outline:none;
+  }
+  .calendar-widget{ margin-bottom:16px; padding-bottom:14px; border-bottom:1px solid var(--border); }
+  .calendar-header{ display:flex; align-items:center; justify-content:space-between; gap:6px; margin-bottom:10px; }
+  .calendar-header button{ background:var(--surface-2); border:1px solid var(--border); color:var(--text-dim); border-radius:6px; width:24px; height:24px; font-size:12px; flex-shrink:0; }
+  .calendar-month-label{
+    font-family:var(--mono); font-size:12px; color:var(--text-dim);
+    min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
+  .calendar-header-right{ display:flex; align-items:center; gap:6px; flex-shrink:0; }
+  .calendar-grid{ display:grid; grid-template-columns:repeat(7,1fr); gap:3px; }
+  .calendar-dow{ text-align:center; font-family:var(--mono); font-size:9.5px; color:var(--text-faint); padding-bottom:3px; }
+  .calendar-cell{
+    aspect-ratio:1; display:flex; flex-direction:column; align-items:center; justify-content:center;
+    border-radius:6px; cursor:pointer; gap:2px; border:1px solid transparent; overflow:hidden;
+  }
+  .calendar-cell:hover{ background:var(--surface-2); }
+  .calendar-cell.other-month{ opacity:0.3; }
+  .calendar-cell.today{ border-color:var(--accent); box-shadow:0 0 0 1px var(--accent-glow); }
+  .calendar-cell.selected{ background:var(--accent); }
+  .calendar-cell.selected .calendar-daynum{ color:var(--on-accent); font-weight:700; }
+  .calendar-daynum{ font-family:var(--mono); font-size:11px; color:var(--text-dim); }
+  .calendar-dots{ display:flex; gap:2px; align-items:center; justify-content:center; min-height:5px; max-width:100%; flex-wrap:wrap; }
+  .calendar-dot{ width:4px; height:4px; border-radius:50%; flex-shrink:0; }
+  .calendar-event-marker{
+    width:0; height:0; flex-shrink:0;
+    border-left:3px solid transparent; border-right:3px solid transparent; border-bottom:5px solid;
+  }
+  .calendar-dot-more{ font-size:7px; color:var(--text-faint); font-family:var(--mono); flex-shrink:0; }
+  .calendar-clear-inline{
+    background:transparent; border:1px solid var(--border); color:var(--text-faint); border-radius:6px;
+    padding:2px 8px; font-size:10.5px; font-family:var(--mono); margin-left:8px;
+  }
+
+  /* ---------- Full calendar tab ---------- */
+  .big-calendar-layout{ display:grid; grid-template-columns:1fr 320px; gap:24px; align-items:start; }
+  @media (max-width:820px){ .big-calendar-layout{ grid-template-columns:1fr; } }
+  .big-calendar-widget{ padding:22px; }
+  .big-calendar-grid{ gap:6px; }
+  .big-calendar-cell{ min-height:64px; padding:6px; align-items:flex-start; }
+  .big-calendar-cell .calendar-daynum{ font-size:14px; }
+  .big-calendar-cell .calendar-dots{ margin-top:auto; flex-wrap:wrap; }
+  .big-calendar-cell .calendar-dot{ width:5px; height:5px; }
+  .big-calendar-cell .calendar-event-marker{ border-left-width:4px; border-right-width:4px; border-bottom-width:6px; }
+
+  .calendar-side-panel{
+    background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
+    padding:18px; position:sticky; top:20px;
+  }
+  .calendar-side-heading{ font-family:var(--display); font-size:16px; color:var(--text); margin-bottom:10px; }
+  .calendar-side-status{
+    font-family:var(--mono); font-size:11.5px; color:var(--danger); background:rgba(232,118,143,0.12);
+    border:1px solid var(--danger-glow); border-radius:6px; padding:6px 10px; margin-bottom:10px;
+  }
+  .calendar-side-tasks-title{
+    font-family:var(--mono); font-size:10.5px; color:var(--text-faint); letter-spacing:1px; text-transform:uppercase;
+    margin:16px 0 8px;
+  }
+
+  /* ---------- Period tracking ---------- */
+  .period-toggle-btn{
+    background:var(--surface-2); border:1px solid var(--border); border-radius:6px;
+    width:24px; height:24px; font-size:13px; line-height:1; opacity:0.75;
+  }
+  .period-toggle-btn:hover{ opacity:1; }
+  .period-toggle-btn.active{ opacity:1; border-color:var(--danger); background:rgba(232,118,143,0.15); box-shadow:0 0 0 1px rgba(232,118,143,0.25); }
+  .calendar-cell.period-confirmed{ outline:2px solid var(--danger); outline-offset:-2px; }
+  .calendar-cell.period-predicted{ outline:2px dashed rgba(232,118,143,0.55); outline-offset:-2px; }
+  .calendar-cell.edit-mode{ cursor:pointer; }
+  .calendar-cell.edit-mode:hover{ background:rgba(232,118,143,0.10); }
+  .period-edit-panel{ margin-top:12px; padding-top:12px; border-top:1px solid var(--border); }
+  .period-edit-hint{ font-size:11px; color:var(--text-faint); line-height:1.5; margin-bottom:10px; }
+  .period-settings-row{ display:flex; gap:12px; }
+  .period-settings-row label{
+    flex:1; display:flex; flex-direction:column; gap:4px; font-family:var(--mono);
+    font-size:10px; color:var(--text-faint); text-transform:uppercase; letter-spacing:0.4px;
+  }
+  .period-settings-row input{
+    background:var(--surface); border:1px solid var(--border); color:var(--text);
+    border-radius:6px; padding:5px 8px; font-size:12.5px; outline:none; width:100%;
+  }
+
+  .calendar-cell.phase-follicular{ background:rgba(79,209,197,0.14); }
+  .calendar-cell.phase-ovulation{ background:rgba(199,146,234,0.20); }
+  .calendar-cell.phase-luteal{ background:rgba(232,147,90,0.14); }
+  .calendar-cell.trimester-1{ background:rgba(123,170,247,0.14); }
+  .calendar-cell.trimester-2{ background:rgba(79,209,197,0.14); }
+  .calendar-cell.trimester-3{ background:rgba(232,147,90,0.14); }
+  .calendar-cell.selected{ background:var(--accent) !important; }
+
+  .cycle-readout{
+    margin-top:10px; font-family:var(--mono); font-size:11px; color:var(--text-dim);
+    background:var(--surface-2); border:1px solid var(--border); border-radius:6px; padding:6px 10px; text-align:center;
+  }
+
+  .period-mode-switch{ display:flex; gap:6px; margin-bottom:12px; }
+  .period-mode-switch button{
+    flex:1; background:var(--surface); border:1px solid var(--border); color:var(--text-dim);
+    border-radius:6px; padding:6px 8px; font-size:11px; font-family:var(--mono);
+  }
+  .period-mode-switch button.active{ background:var(--danger); border-color:var(--danger); color:var(--on-accent); font-weight:700; }
+
+  .phase-legend{ display:flex; flex-wrap:wrap; gap:10px; margin-top:12px; font-size:10.5px; color:var(--text-faint); font-family:var(--mono); }
+  .phase-legend span{ display:flex; align-items:center; gap:5px; }
+  .phase-swatch{ width:8px; height:8px; border-radius:2px; display:inline-block; font-style:normal; }
+
+  .period-due-save{
+    width:100%; background:var(--danger); color:var(--on-accent); border:none; border-radius:7px;
+    padding:8px; font-weight:700; font-size:12.5px; margin-top:2px;
+  }
+
+  .period-primary-btn{
+    width:100%; background:var(--danger); color:var(--on-accent); border:none; border-radius:7px;
+    padding:10px; font-weight:700; font-size:12.5px; margin-bottom:8px;
+  }
+  .period-secondary-btn{
+    width:100%; background:transparent; border:1px dashed var(--border); color:var(--text-faint);
+    border-radius:7px; padding:8px; font-size:11.5px; margin-bottom:4px;
+  }
+  .period-form-cancel{
+    flex:1; background:transparent; border:1px solid var(--border); color:var(--text-faint);
+    border-radius:7px; padding:8px; font-size:12px;
+  }
+  .period-log-form .period-due-save{ flex:1; margin-top:0; }
+  .period-ongoing-check{
+    display:flex; align-items:center; gap:6px; font-size:11.5px; color:var(--text-dim);
+    margin-bottom:10px; cursor:pointer;
+  }
+  .period-history{ margin-bottom:4px; }
+  .period-history-row{
+    display:flex; align-items:center; justify-content:space-between; background:var(--surface-2);
+    border-radius:6px; padding:6px 10px; margin-bottom:5px; font-size:11.5px; color:var(--text-dim);
+  }
+  .period-history-actions{ display:flex; gap:4px; }
+  .period-history-actions button{ background:transparent; border:none; color:var(--text-faint); font-size:12px; padding:2px 5px; }
+  .period-history-actions button:hover{ color:var(--text-dim); }
+  .period-history-empty{ font-size:11.5px; color:var(--text-faint); padding:6px 2px; }
+  .period-history-more{ font-family:var(--mono); font-size:10px; color:var(--text-faint); text-align:center; padding:4px; }
+
+  .pregnancy-weeks-row{
+    display:flex; align-items:center; gap:8px; margin:10px 0; font-size:11.5px; color:var(--text-faint);
+  }
+  .pregnancy-weeks-input{
+    width:60px; background:var(--surface); border:1px solid var(--border); color:var(--text);
+    border-radius:6px; padding:5px 8px; font-size:12.5px; outline:none;
+  }
+  .pregnancy-weeks-row button{
+    background:var(--surface-2); border:1px solid var(--border); color:var(--text-dim);
+    border-radius:6px; padding:5px 10px; font-size:11.5px;
+  }
+  .period-return-btn{
+    width:100%; background:transparent; border:1px dashed var(--accent-dim); color:var(--text-dim);
+    border-radius:7px; padding:8px; font-size:11.5px; margin-top:12px;
+  }
+  .period-return-form{ margin-top:12px; padding-top:12px; border-top:1px solid var(--border); }
+
+  main.content{ min-height:300px; }
+
+  .section-title{
+    font-family:var(--mono); font-size:11px; letter-spacing:1.5px; text-transform:uppercase;
+    color:var(--text-faint); margin:0 0 10px 2px; display:flex; align-items:center; gap:8px;
+  }
+  .section-title.overdue{ color:var(--danger); }
+
+  .group{ margin-bottom:22px; }
+  .group-head{ display:flex; align-items:center; gap:8px; margin-bottom:8px; padding:0 2px; }
+  .group-head .name{ font-family:var(--display); font-size:16px; }
+  .group-head .n{ font-family:var(--mono); font-size:11px; color:var(--text-faint); }
+
+  .task{
+    background:var(--surface); border:1px solid var(--border); border-radius:8px;
+    padding:12px 14px; margin-bottom:7px; display:flex; align-items:flex-start; gap:12px;
+    transition:border-color .15s;
+  }
+  .task.overdue{ border-color:rgba(232,118,143,0.45); box-shadow:0 0 0 1px rgba(232,118,143,0.08) inset; }
+  .task.priority{ border-left:3px solid var(--accent); }
+  .task.done{ opacity:0.5; }
+  .task.done .title{ text-decoration:line-through; }
+
+  .checkbox{
+    width:19px; height:19px; border-radius:5px; border:1.5px solid var(--border);
+    background:var(--surface-2); flex-shrink:0; margin-top:1px; display:flex; align-items:center; justify-content:center;
+    transition:all .15s;
+  }
+  .checkbox.checked{ background:var(--success); border-color:var(--success); color:#0E1712; font-size:12px; }
+  .event-marker{
+    width:19px; height:19px; flex-shrink:0; margin-top:1px; display:flex; align-items:center;
+    justify-content:center; font-size:13px; opacity:0.85; cursor:default;
+  }
+  .task.event-row{ border-left:3px solid var(--plot-lavender); }
+
+  .task-body{ flex:1; min-width:0; }
+  .title-row{ display:flex; align-items:center; gap:6px; }
+  .priority-star{ color:var(--accent); font-size:12px; flex-shrink:0; }
+  .task .title{ font-size:14px; color:var(--text); margin-bottom:3px; }
+  .task .meta{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  .badge{ font-family:var(--mono); font-size:10.5px; padding:2px 7px; border-radius:4px; letter-spacing:0.3px; }
+  .badge.due{ background:var(--surface-2); color:var(--text-dim); border:1px solid var(--border); }
+  .badge.overdue{ background:rgba(232,118,143,0.15); color:var(--danger); border:1px solid rgba(232,118,143,0.4); }
+  .badge.event{ background:rgba(200,168,232,0.15); color:var(--plot-lavender); border:1px solid var(--plot-lavender); }
+  .badge.cat{ color:var(--text-faint); }
+  .badge.recur{ background:var(--accent-glow); color:var(--accent); border:1px solid var(--accent-dim); }
+  .badge.subtask-toggle{ background:var(--surface-2); color:var(--text-dim); border:1px solid var(--border); cursor:pointer; }
+  .badge.subtask-toggle:hover{ border-color:var(--accent-dim); }
+  .task .notes{ font-size:12px; color:var(--text-faint); margin-top:5px; line-height:1.4; }
+  .subtask-list{ margin-top:9px; display:flex; flex-direction:column; gap:5px; }
+  .subtask-row{ display:flex; align-items:center; gap:8px; font-size:12.5px; color:var(--text-dim); }
+  .subtask-row.done .subtask-title{ text-decoration:line-through; opacity:0.5; }
+  .subtask-checkbox{
+    width:14px; height:14px; border-radius:4px; border:1.5px solid var(--border); background:var(--surface-2);
+    flex-shrink:0; display:flex; align-items:center; justify-content:center; font-size:9px; cursor:pointer;
+  }
+  .subtask-checkbox.checked{ background:var(--success); border-color:var(--success); color:#0E1712; }
+  .task-actions{ display:flex; gap:6px; flex-shrink:0; }
+  .task-actions button{ background:transparent; border:none; color:var(--text-faint); font-size:14px; padding:3px 6px; border-radius:4px; }
+  .task-actions button:hover{ color:var(--text-dim); background:var(--surface-2); }
+
+  .empty{
+    text-align:center; padding:60px 20px; color:var(--text-faint); border:1px dashed var(--border);
+    border-radius:var(--radius); font-size:13.5px; line-height:1.7;
+  }
+  .empty b{ color:var(--text-dim); }
+
+  /* ---------- Modal ---------- */
+  .overlay{ position:fixed; inset:0; background:rgba(10,11,13,0.7); backdrop-filter:blur(3px); display:flex; align-items:center; justify-content:center; z-index:50; padding:20px; }
+  .modal{ background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:22px; width:100%; max-width:420px; }
+  .modal h2{ font-family:var(--display); font-size:19px; margin-bottom:16px; }
+  .field{ margin-bottom:13px; }
+  .field label{ display:block; font-size:11.5px; color:var(--text-faint); margin-bottom:5px; font-family:var(--mono); text-transform:uppercase; letter-spacing:0.5px; }
+  .field input, .field select, .field textarea{
+    width:100%; background:var(--bg); border:1px solid var(--border); color:var(--text);
+    border-radius:7px; padding:9px 11px; font-size:13.5px; outline:none;
+  }
+  .field input:focus, .field select:focus, .field textarea:focus{ border-color:var(--accent); }
+  .field textarea{ resize:vertical; min-height:56px; }
+  /* Native date/time inputs default to a black calendar icon, which is
+     invisible against this dark theme — color-scheme flips the browser's
+     built-in picker to a dark-appropriate palette, and the indicator filter
+     is a fallback for browsers that don't fully theme it. */
+  .field input[type="date"]{
+    color-scheme: dark;
+    cursor: pointer;
+  }
+  .field input[type="date"]::-webkit-calendar-picker-indicator{
+    filter: invert(0.8) brightness(1.3);
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 4px;
+  }
+  .field input[type="date"]::-webkit-calendar-picker-indicator:hover{
+    background: var(--surface-2);
+  }
+  .modal-actions{ display:flex; justify-content:flex-end; gap:8px; margin-top:18px; }
+  .modal-actions button{ padding:9px 16px; border-radius:7px; font-size:13px; font-weight:600; border:1px solid var(--border); background:transparent; color:var(--text-dim); }
+  .modal-actions .primary{ background:var(--accent); border:none; color:var(--on-accent); }
+
+  /* ---------- Custom date picker ---------- */
+  .date-field-wrap{ position:relative; }
+  .date-field-btn{
+    width:100%; display:flex; align-items:center; justify-content:space-between;
+    background:var(--bg); border:1px solid var(--border); color:var(--text);
+    border-radius:7px; padding:9px 11px; font-size:13.5px; text-align:left; font-family:inherit;
+  }
+  .date-field-btn:hover{ border-color:var(--accent-dim); }
+  .date-field-icon{ font-size:13px; opacity:0.8; }
+  .date-popover{
+    position:absolute; top:calc(100% + 6px); left:0; z-index:70; width:260px;
+    background:var(--surface-2); border:1px solid var(--border); border-radius:10px;
+    padding:12px; box-shadow:0 12px 28px rgba(0,0,0,0.5);
+  }
+  .date-popover.hidden{ display:none; }
+  .date-popover-header{ display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; }
+  .date-popover-header button{ background:var(--surface); border:1px solid var(--border); color:var(--text-dim); border-radius:6px; width:24px; height:24px; font-size:12px; }
+  .date-popover-month{ font-family:var(--mono); font-size:12px; color:var(--text-dim); }
+  .date-popover-grid{ display:grid; grid-template-columns:repeat(7,1fr); gap:2px; margin-bottom:8px; }
+  .date-popover-dow{ text-align:center; font-family:var(--mono); font-size:9px; color:var(--text-faint); padding-bottom:2px; }
+  .date-popover-cell{
+    aspect-ratio:1; display:flex; align-items:center; justify-content:center; border-radius:6px;
+    cursor:pointer; font-family:var(--mono); font-size:11px; color:var(--text-dim); border:1px solid transparent;
+  }
+  .date-popover-cell:hover{ background:var(--surface); }
+  .date-popover-cell.other-month{ opacity:0.3; }
+  .date-popover-cell.today{ border-color:var(--accent); }
+  .date-popover-cell.selected{ background:var(--accent); color:var(--on-accent); font-weight:700; }
+  .date-popover-today{
+    width:100%; background:var(--surface); border:1px solid var(--border); color:var(--accent);
+    border-radius:6px; padding:6px; font-size:11.5px; font-family:var(--mono); font-weight:600;
+  }
+
+  /* ---------- Report ---------- */
+  .stat-grid{ display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:22px; }
+  @media (max-width:760px){ .stat-grid{ grid-template-columns:repeat(2,1fr); } }
+  .stat-card{ background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:16px; }
+  .stat-card .val{ font-family:var(--display); font-size:28px; color:var(--accent); }
+  .stat-card .lbl{ font-family:var(--mono); font-size:10.5px; color:var(--text-faint); letter-spacing:1px; text-transform:uppercase; margin-top:4px; }
+
+  .chart-grid{ display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+  @media (max-width:760px){ .chart-grid{ grid-template-columns:1fr; } }
+  .chart-card{ background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:18px; }
+  .chart-card h3{ font-family:var(--mono); font-size:11px; color:var(--text-faint); letter-spacing:1.2px; text-transform:uppercase; margin-bottom:12px; }
+  .chart-card canvas{ max-height:220px; }
+
+  .task.projected{ border-style:dashed; opacity:0.68; }
+  .task.projected:hover{ opacity:0.85; }
+  .projected-icon{
+    width:19px; height:19px; border-radius:5px; border:1.5px dashed var(--accent-dim); flex-shrink:0; margin-top:1px;
+    display:flex; align-items:center; justify-content:center; color:var(--accent); font-size:11px;
+  }
+  .reminder-popups{ position:fixed; top:20px; right:20px; z-index:65; display:flex; flex-direction:column; gap:10px; width:min(300px, calc(100vw - 40px)); }
+  .reminder-popup{ background:var(--surface); border:1px solid var(--accent); border-radius:12px; padding:14px 16px; box-shadow:0 12px 28px rgba(0,0,0,0.45), 0 0 18px var(--accent-glow); animation: toastIn .3s ease; }
+  .reminder-popup-label{ font-family:var(--mono); font-size:10.5px; color:var(--accent); letter-spacing:1px; text-transform:uppercase; margin-bottom:6px; }
+  .reminder-popup-title{ font-family:var(--display); font-size:15px; color:var(--text); margin-bottom:12px; line-height:1.4; }
+  .reminder-popup-actions{ display:flex; gap:6px; flex-wrap:wrap; }
+  .reminder-popup-actions button{ background:transparent; border:1px solid var(--border); color:var(--text-dim); border-radius:7px; padding:6px 10px; font-size:12px; }
+  .reminder-popup-actions .reminder-done-btn{ background:var(--accent); border-color:var(--accent); color:var(--on-accent); font-weight:700; }
+  .banner.period-notice{ flex-wrap:wrap; }
+  .period-notice-actions{ display:flex; gap:8px; flex-wrap:wrap; }
+  .fine{ text-align:center; color:var(--text-faint); font-size:11.5px; margin-top:30px; font-family:var(--mono); }
+
+  /* ---------- Celebration: animation, toast, streak badge ---------- */
+  @keyframes checkPop{
+    0%{ transform:scale(0.55); }
+    55%{ transform:scale(1.3); box-shadow:0 0 0 9px var(--accent-glow); }
+    100%{ transform:scale(1); box-shadow:0 0 0 0 transparent; }
+  }
+  .checkbox.pop{ animation: checkPop .55s cubic-bezier(.34,1.56,.64,1); }
+  @keyframes rowFlash{
+    0%{ background:rgba(111,207,151,0.20); border-color:rgba(111,207,151,0.5); }
+    100%{ background:var(--surface); }
+  }
+  .task.pop{ animation: rowFlash .7s ease; }
+
+  .toast{
+    position:fixed; bottom:24px; right:24px; max-width:280px; z-index:60;
+    background:var(--surface); border:1px solid var(--accent-dim); color:var(--text);
+    padding:14px 18px; border-radius:10px; font-size:13.5px; line-height:1.4;
+    box-shadow:0 12px 28px rgba(0,0,0,0.45); animation: toastIn .3s ease;
+  }
+  @keyframes toastIn{ from{ opacity:0; transform:translateY(10px); } to{ opacity:1; transform:translateY(0); } }
+
+  .streak-badge{
+    display:flex; align-items:center; gap:5px; background:var(--surface); border:1px solid var(--accent-dim);
+    color:var(--accent); border-radius:999px; padding:8px 14px; font-family:var(--mono); font-size:12px;
+    font-weight:700; white-space:nowrap;
+  }
+  .level-badge{
+    display:flex; flex-direction:column; gap:5px; background:var(--surface); border:1px solid var(--border);
+    border-radius:999px; padding:8px 14px; font-family:var(--mono); font-size:12px; font-weight:700;
+    color:var(--text); white-space:nowrap; min-width:86px;
+  }
+  .level-bar-bg{ width:100%; height:3px; background:var(--surface-2); border-radius:2px; overflow:hidden; }
+  .level-bar-fill{ height:100%; background:linear-gradient(90deg, var(--accent), #F0F4FF); }
+
+  .insights-panel{ margin-bottom:22px; }
+  .insight-card{
+    display:flex; align-items:flex-start; gap:10px; background:var(--surface); border:1px solid var(--border);
+    border-left:3px solid var(--text-faint); border-radius:8px; padding:12px 14px; margin-bottom:8px; font-size:13.5px; line-height:1.5;
+  }
+  .insight-card.good{ border-left-color:var(--success); }
+  .insight-card.bad{ border-left-color:var(--danger); }
+  .insight-card.neutral{ border-left-color:var(--accent); }
+  .insight-icon{ font-size:14px; line-height:1.4; flex-shrink:0; }
+
+  .pulse-delta{ font-family:var(--mono); font-size:11px; text-align:right; margin-top:2px; }
+  .pulse-delta.up{ color:var(--success); }
+  .pulse-delta.down{ color:var(--danger); }
+  .pulse-delta.flat{ color:var(--text-faint); }
+
+  .achievements-panel{ margin-bottom:22px; }
+  .badge-grid{ display:grid; grid-template-columns:repeat(auto-fill, minmax(120px,1fr)); gap:10px; margin-bottom:18px; }
+  .badge-item{
+    background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:14px 10px;
+    text-align:center; opacity:0.45;
+  }
+  .badge-item.unlocked{ opacity:1; border-color:var(--accent-dim); box-shadow:0 0 0 1px rgba(201,217,245,0.10) inset; }
+  .badge-icon{ font-size:24px; margin-bottom:6px; }
+  .badge-name{ font-family:var(--mono); font-size:10.5px; color:var(--text-dim); line-height:1.3; }
+  .badge-item.unlocked .badge-name{ color:var(--text); }
+
+  .share-card{
+    background:linear-gradient(160deg, var(--surface), var(--bg)); border:1px solid var(--border); border-radius:14px;
+    padding:24px; margin-bottom:14px; max-width:480px;
+  }
+  .share-header{ display:flex; justify-content:space-between; align-items:baseline; margin-bottom:16px; }
+  .share-title{ font-family:var(--brand); font-size:20px; font-weight:600; font-variation-settings:"SOFT" 40, "opsz" 40; letter-spacing:-0.01em; }
+  .share-title span{ color:var(--text-dim); font-weight:400; font-size:15px; }
+  .share-date{ font-family:var(--mono); font-size:10.5px; color:var(--text-faint); }
+  .share-level-row{ display:flex; align-items:baseline; gap:10px; margin-bottom:18px; }
+  .share-level-num{ font-family:var(--display); font-size:32px; color:var(--accent); }
+  .share-xp{ font-family:var(--mono); font-size:11.5px; color:var(--text-faint); }
+  .share-stats-row{ display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-bottom:18px; }
+  .share-stat .v{ font-family:var(--display); font-size:19px; color:var(--text); }
+  .share-stat .l{ font-family:var(--mono); font-size:9.5px; color:var(--text-faint); text-transform:uppercase; letter-spacing:0.5px; margin-top:2px; }
+  .share-badges{ display:flex; flex-wrap:wrap; gap:6px; margin-bottom:16px; }
+  .share-badge-chip{
+    background:rgba(201,217,245,0.14); border:1px solid var(--accent-dim); color:var(--accent);
+    border-radius:999px; padding:5px 11px; font-size:11.5px; font-family:var(--mono);
+  }
+  .share-badge-chip.empty{ background:var(--surface-2); border-color:var(--border); color:var(--text-faint); }
+  .share-footer{ font-family:var(--mono); font-size:10px; color:var(--text-faint); text-align:right; }
+
+  .download-btn{
+    background:var(--accent); color:var(--on-accent); border:none; border-radius:8px; padding:10px 18px;
+    font-weight:700; font-size:13px;
+  }
+
+  /* ---------- Year in Review ---------- */
+  .wrapped-panel{ margin-bottom:22px; }
+  .wrapped-panel-note{ font-size:12.5px; color:var(--text-faint); margin:-4px 2px 14px; }
+  .wrapped-card{
+    background:linear-gradient(160deg, var(--surface-2), var(--surface) 60%);
+    border:1px solid var(--plot-rose); border-radius:16px; padding:28px;
+    margin-bottom:14px; max-width:480px; box-shadow:0 0 30px rgba(224,168,192,0.08);
+  }
+  .wrapped-header{ display:flex; justify-content:space-between; align-items:baseline; margin-bottom:20px; }
+  .wrapped-appname{ font-family:var(--mono); font-size:11px; color:var(--text-faint); letter-spacing:1px; text-transform:uppercase; }
+  .wrapped-year{ font-family:var(--mono); font-size:11px; color:var(--plot-rose); }
+  .wrapped-title{ font-family:var(--display); font-size:26px; font-weight:700; color:var(--text); margin-bottom:10px; }
+  .wrapped-metaphor{ font-size:14px; line-height:1.6; color:var(--text-dim); font-style:italic; margin-bottom:22px; }
+  .wrapped-stats-row{ display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-bottom:22px; }
+  .wrapped-stat .v{ font-family:var(--display); font-size:22px; color:var(--accent); }
+  .wrapped-stat .l{ font-family:var(--mono); font-size:9.5px; color:var(--text-faint); text-transform:uppercase; letter-spacing:0.4px; margin-top:2px; }
+  .wrapped-welldone-title{ font-family:var(--mono); font-size:10.5px; color:var(--text-faint); letter-spacing:1px; text-transform:uppercase; margin-bottom:10px; }
+  .wrapped-line{ font-size:13px; color:var(--text-dim); line-height:1.6; margin-bottom:6px; }
+  .wrapped-footer{ font-family:var(--mono); font-size:10px; color:var(--text-faint); text-align:right; margin-top:18px; }
+
+  .wrapped-modal{ max-width:520px; width:100%; }
+  .wrapped-modal .wrapped-card{ max-width:none; margin-bottom:16px; }
+  .wrapped-modal-actions{ display:flex; gap:10px; }
+  .wrapped-close-btn{
+    flex:1; background:transparent; border:1px solid var(--border); color:var(--text-dim);
+    border-radius:8px; padding:10px 18px; font-size:13px;
+  }
+
+  .chip-row{ display:flex; flex-wrap:wrap; gap:8px; margin-bottom:18px; }
+  .chip{
+    display:flex; align-items:center; gap:6px; background:var(--surface); border:1px solid var(--border);
+    color:var(--text-dim); border-radius:999px; padding:6px 13px; font-size:12.5px;
+  }
+  .chip.active{ background:var(--surface-2); border-color:var(--accent-dim); color:var(--text); }
+  .chip .cat-swatch{ margin-right:0; }
+  .chip .count{ font-family:var(--mono); font-size:10.5px; color:var(--text-faint); }
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<script>
+(function(){
+
+/* ============================ STATE ============================ */
+const DAY_MS = 86400000;
+const DAY_NAMES = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+const CAT_COLORS = ['#A8C5E8','#8FE0C7','#C9B8F0','#8FD9E8','#B8CDF0','#A0E8D4','#D4C9F0'];
+
+let state = {
+  tasks: [],        // {id, title, category, dueDate('YYYY-MM-DD'), notes, completed, completedAt, createdAt}
+  categories: ['Work','Home','Health'],
+  meta: { lastReminderDate: null, seenBadges: [], appName: 'WEEKLY', calendarPlacement: 'sidebar', cloneCounts: {}, declinedHabitSuggestions: [], wrappedSeenYears: [], theme: 'moonlit', periodMigrationDone: false, notificationSound: 'chime' },
+  period: { cycleLength: 28, periodLength: 5, confirmedStarts: [], dayOverrides: {}, loggedPeriods: [], mode: 'cycle', pregnancy: { dueDate: null }, enabled: false },
+  periodEditMode: false,
+  periodLogFormOpen: false,
+  periodEditingEntry: null,
+  returnToCycleFormOpen: false,
+  showWrappedIntro: false,
+  wrappedIntroYear: null,
+  plot: { shuffledOrder: [], pointer: 0, log: [] },
+  habitSuggestion: null,
+  plotSuggestionOpen: false,
+  currentPlotSuggestion: null,
+  view: 'week',      // 'week' | 'all' | 'completed' | 'report'
+  weekOffset: 0,      // 0 = this week
+  monthOffset: 0,      // 0 = this month (for Completed view)
+  activeCategory: 'all',
+  allTasksCategory: 'all',
+  searchQuery: '',
+  notifPermission: (typeof Notification !== 'undefined') ? Notification.permission : 'unsupported',
+  showBanner: false,
+  bannerText: '',
+  modalOpen: false,
+  editingTask: null,
+  lastToggledId: null,
+  toast: null,
+  editingAppName: false,
+  calendarMonthOffset: 0,
+  calendarSelectedDate: null,
+  expandedSubtaskIds: [],
+  currentTheme: 'moonlit',
+  settingsOpen: false,
+  loaded: false
+};
+
+/* ============================ THEMES ============================ */
+const THEMES = {
+  moonlit: {
+    label: 'Moonlit', dark: true,
+    vars: {
+      '--bg':'#12142C','--surface':'#1B1E3F','--surface-2':'#242850','--border':'#333865',
+      '--text':'#FFFFFF','--text-dim':'#D9DCF7','--text-faint':'#ADB3E0',
+      '--accent':'#C9D9F5','--accent-dim':'#5A6592','--accent-glow':'rgba(201,217,245,0.30)','--on-accent':'#12142A',
+      '--danger':'#E8768F','--danger-glow':'rgba(232,118,143,0.30)','--success':'#7DD3B8',
+      '--phase-follicular':'#4FD1C5','--phase-ovulation':'#C792EA','--phase-luteal':'#D4A574',
+      '--trimester-1':'#7BAAF7','--trimester-2':'#4FD1C5','--trimester-3':'#D4A574',
+      '--plot-rose':'#E0A8C0','--plot-rose-glow':'rgba(224,168,192,0.30)','--plot-lavender':'#B8A8E8'
+    },
+    chart: { line:'#C9D9F5', lineFill:'rgba(201,217,245,0.15)', tick:'#D9DCF7', grid:'#242850', bar:'rgba(232,118,143,0.55)' },
+    exportBg: '#1B1E3F'
+  },
+  moonstone: {
+    label: 'Moonstone', dark: false,
+    vars: {
+      '--bg':'#F5F5FB','--surface':'#FCFCFF','--surface-2':'#E8E8F3','--border':'#C6C6DE',
+      '--text':'#23232E','--text-dim':'#52526B','--text-faint':'#63637D',
+      '--accent':'#5468BE','--accent-dim':'#A8B2DE','--accent-glow':'rgba(84,104,190,0.22)','--on-accent':'#FFFFFF',
+      '--danger':'#A02D4E','--danger-glow':'rgba(160,45,78,0.18)','--success':'#1F6B4A',
+      '--phase-follicular':'#2F9E90','--phase-ovulation':'#8F6BA8','--phase-luteal':'#B5793A',
+      '--trimester-1':'#4A7AD1','--trimester-2':'#2F9E90','--trimester-3':'#B5793A',
+      '--plot-rose':'#8F3A63','--plot-rose-glow':'rgba(143,58,99,0.18)','--plot-lavender':'#6B7BC7'
+    },
+    chart: { line:'#5468BE', lineFill:'rgba(84,104,190,0.15)', tick:'#52526B', grid:'#E8E8F3', bar:'rgba(160,45,78,0.5)' },
+    exportBg: '#FCFCFF'
+  },
+  sage: {
+    label: 'Sage', dark: false,
+    vars: {
+      '--bg':'#F2EAD9','--surface':'#F8F2E5','--surface-2':'#E8DCC0','--border':'#B89F68',
+      '--text':'#2E2318','--text-dim':'#5C4A32','--text-faint':'#6E5A3E',
+      '--accent':'#5F7052','--accent-dim':'#9CAD8F','--accent-glow':'rgba(95,112,82,0.22)','--on-accent':'#FFFFFF',
+      '--danger':'#A02D4E','--danger-glow':'rgba(160,45,78,0.18)','--success':'#3D6B4A',
+      '--phase-follicular':'#6B8A6E','--phase-ovulation':'#8A6B8F','--phase-luteal':'#B5883A',
+      '--trimester-1':'#6B7A94','--trimester-2':'#6B8A6E','--trimester-3':'#B5883A',
+      '--plot-rose':'#8A3F50','--plot-rose-glow':'rgba(138,63,80,0.20)','--plot-lavender':'#8A6B8F'
+    },
+    chart: { line:'#5F7052', lineFill:'rgba(95,112,82,0.15)', tick:'#5C4A32', grid:'#E8DCC0', bar:'rgba(160,45,78,0.5)' },
+    exportBg: '#F8F2E5'
+  },
+  plum: {
+    label: 'Plum', dark: true,
+    vars: {
+      '--bg':'#241220','--surface':'#331A2C','--surface-2':'#3F2136','--border':'#5C2E4C',
+      '--text':'#FBF1F6','--text-dim':'#E0B8D0','--text-faint':'#C08FAE',
+      '--accent':'#E85FA0','--accent-dim':'#8A4468','--accent-glow':'rgba(232,95,160,0.28)','--on-accent':'#2A1420',
+      '--danger':'#F0879E','--danger-glow':'rgba(240,135,158,0.28)','--success':'#8FE0BE',
+      '--phase-follicular':'#5FCFC0','--phase-ovulation':'#D48FE0','--phase-luteal':'#E0A874',
+      '--trimester-1':'#8FA8E8','--trimester-2':'#5FCFC0','--trimester-3':'#E0A874',
+      '--plot-rose':'#F0A8C8','--plot-rose-glow':'rgba(240,168,200,0.30)','--plot-lavender':'#C8A8E8'
+    },
+    chart: { line:'#E85FA0', lineFill:'rgba(232,95,160,0.15)', tick:'#E0B8D0', grid:'#3F2136', bar:'rgba(240,135,158,0.5)' },
+    exportBg: '#331A2C'
+  }
+};
+const THEME_ORDER = ['moonlit','moonstone','sage','plum'];
+
+function applyTheme(themeKey){
+  const key = THEMES[themeKey] ? themeKey : 'moonlit';
+  // Moonlit is the stylesheet's :root default, so it's applied by removing
+  // the attribute rather than by re-declaring its values redundantly here.
+  if(key === 'moonlit'){ document.documentElement.removeAttribute('data-theme'); }
+  else{ document.documentElement.setAttribute('data-theme', key); }
+  state.currentTheme = key;
+}
+
+/* ============================ STORAGE ============================ */
+const hasCloudStorage = (typeof window !== 'undefined' && !!window.storage);
+const LS_PREFIX = 'weekly-app:';
+
+async function storageGet(key){
+  if(hasCloudStorage){
+    try{ return await window.storage.get(key); }
+    catch(e){ return null; }
+  }
+  try{
+    const v = localStorage.getItem(LS_PREFIX+key);
+    return v!=null ? {key, value:v, shared:false} : null;
+  }catch(e){ return null; }
+}
+async function storageSet(key, value){
+  if(hasCloudStorage){
+    try{ return await window.storage.set(key, value); }
+    catch(e){ console.error('storage.set failed', key, e); return null; }
+  }
+  try{
+    localStorage.setItem(LS_PREFIX+key, value);
+    return {key, value, shared:false};
+  }catch(e){ console.error('localStorage.setItem failed', key, e); return null; }
+}
+
+async function loadState(){
+  try{
+    const t = await storageGet('tasks');
+    state.tasks = t ? JSON.parse(t.value) : [];
+  }catch(e){ state.tasks = []; }
+  try{
+    const c = await storageGet('categories');
+    state.categories = c ? JSON.parse(c.value) : state.categories;
+  }catch(e){ /* keep defaults */ }
+  try{
+    const m = await storageGet('meta');
+    state.meta = m ? Object.assign({ lastReminderDate:null, seenBadges:[], appName:'WEEKLY', calendarPlacement:'sidebar', cloneCounts:{}, declinedHabitSuggestions:[], wrappedSeenYears:[], theme:'moonlit', periodMigrationDone:false, notificationSound:'chime' }, JSON.parse(m.value)) : state.meta;
+  }catch(e){ /* keep defaults */ }
+  try{
+    const p = await storageGet('period');
+    state.period = p ? Object.assign({ cycleLength:28, periodLength:5, confirmedStarts:[], dayOverrides:{}, loggedPeriods:[], mode:'cycle', pregnancy:{dueDate:null}, enabled:false }, JSON.parse(p.value)) : state.period;
+  }catch(e){ /* keep defaults */ }
+  try{
+    const pl = await storageGet('plot');
+    state.plot = pl ? Object.assign({ shuffledOrder:[], pointer:0, log:[] }, JSON.parse(pl.value)) : state.plot;
+  }catch(e){ /* keep defaults */ }
+  state.loaded = true;
+}
+async function saveTasks(){
+  try{ await storageSet('tasks', JSON.stringify(state.tasks)); }catch(e){ console.error('save tasks failed', e); }
+}
+async function saveCategories(){
+  try{ await storageSet('categories', JSON.stringify(state.categories)); }catch(e){ console.error('save categories failed', e); }
+}
+async function saveMeta(){
+  try{ await storageSet('meta', JSON.stringify(state.meta)); }catch(e){ console.error('save meta failed', e); }
+}
+async function savePeriod(){
+  try{ await storageSet('period', JSON.stringify(state.period)); }catch(e){ console.error('save period failed', e); }
+}
+async function savePlot(){
+  try{ await storageSet('plot', JSON.stringify(state.plot)); }catch(e){ console.error('save plot failed', e); }
+}
+
+/* ============================ DATE HELPERS ============================ */
+function todayStr(){ return fmt(new Date()); }
+function fmt(d){
+  // Use local date components (not toISOString, which converts to UTC and
+  // can shift the calendar day depending on timezone offset / time of day).
+  const y = d.getFullYear();
+  const m = String(d.getMonth()+1).padStart(2,'0');
+  const day = String(d.getDate()).padStart(2,'0');
+  return `${y}-${m}-${day}`;
+}
+function parseDate(s){ const [y,m,dd] = s.split('-').map(Number); return new Date(y, m-1, dd); }
+function startOfWeek(offset){
+  const now = new Date();
+  const day = (now.getDay() + 6) % 7; // Mon=0
+  const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - day + offset*7);
+  return monday;
+}
+function weekDates(offset){
+  const start = startOfWeek(offset);
+  return Array.from({length:7}, (_,i)=>{ const d = new Date(start); d.setDate(start.getDate()+i); return d; });
+}
+function isOverdue(task){
+  if(task.type==='event') return false;
+  if(task.completed) return false;
+  return task.dueDate < todayStr();
+}
+function isInWeek(dateStr, offset){
+  const dates = weekDates(offset).map(fmt);
+  return dates.includes(dateStr);
+}
+function weekLabel(offset){
+  const dates = weekDates(offset);
+  const opts = {month:'short', day:'numeric'};
+  const label = dates[0].toLocaleDateString('en-US', opts) + ' – ' + dates[6].toLocaleDateString('en-US', opts);
+  return offset===0 ? 'This Week · ' + label : (offset<0 ? label + ' (past)' : label + ' (upcoming)');
+}
+function isoWeekKey(dateStr){
+  const d = parseDate(dateStr);
+  const target = new Date(d.valueOf());
+  const dayNr = (d.getDay()+6)%7;
+  target.setDate(target.getDate() - dayNr + 3);
+  const firstThursday = new Date(target.getFullYear(),0,4);
+  const diff = target - firstThursday;
+  const week = 1 + Math.round(diff / (7*DAY_MS));
+  return target.getFullYear() + '-W' + String(week).padStart(2,'0');
+}
+function monthDate(offset){ const now = new Date(); return new Date(now.getFullYear(), now.getMonth()+offset, 1); }
+function monthLabel(offset){ return monthDate(offset).toLocaleDateString('en-US',{month:'long', year:'numeric'}); }
+function isInMonth(dateStr, offset){
+  const d = parseDate(dateStr);
+  const m = monthDate(offset);
+  return d.getFullYear()===m.getFullYear() && d.getMonth()===m.getMonth();
+}
+function nextDueDate(dateStr, recurrence){
+  const d = parseDate(dateStr);
+  if(recurrence==='daily') d.setDate(d.getDate()+1);
+  else if(recurrence==='weekly') d.setDate(d.getDate()+7);
+  else if(recurrence==='monthly') d.setMonth(d.getMonth()+1);
+  else if(recurrence==='yearly') d.setFullYear(d.getFullYear()+1);
+  return fmt(d);
+}
+function niceDate(dateStr){
+  return parseDate(dateStr).toLocaleDateString('en-US',{month:'short', day:'numeric'});
+}
+const RECUR_LABEL = { daily:'Daily', weekly:'Weekly', monthly:'Monthly', yearly:'Yearly' };
+
+function calendarGridDates(offset){
+  const base = monthDate(offset);
+  const year = base.getFullYear(), month = base.getMonth();
+  const firstOfMonth = new Date(year, month, 1);
+  const startWeekday = (firstOfMonth.getDay()+6)%7; // Mon=0
+  const gridStart = new Date(year, month, 1 - startWeekday);
+  return Array.from({length:42}, (_,i)=>{ const d = new Date(gridStart); d.setDate(gridStart.getDate()+i); return d; });
+}
+
+/* ============================ PERIOD TRACKING ============================ */
+// Periods are logged explicitly as {id, start, end} — end is null while a
+// period is "still ongoing". This replaced an earlier tap-a-calendar-day
+// model that couldn't clearly represent start/end or variable-length
+// periods; explicit logging is clearer and more accurate.
+
+function currentOngoingPeriod(){
+  return state.period.loggedPeriods.find(p=>p.end===null) || null;
+}
+
+// Predicts future periods by extrapolating forward from the most recently
+// logged period's start, using the average cycle length and typical period
+// length, out to a horizon.
+function predictedPeriods(){
+  const logged = state.period.loggedPeriods;
+  if(!logged.length) return [];
+  const sorted = [...logged].sort((a,b)=>a.start.localeCompare(b.start));
+  let cursor = sorted[sorted.length-1].start;
+  const horizonEnd = fmt(new Date(Date.now() + 180*DAY_MS));
+  const predicted = [];
+  let guard = 0;
+  while(guard < 24){
+    const d = parseDate(cursor);
+    d.setDate(d.getDate() + state.period.cycleLength);
+    const start = fmt(d);
+    if(start > horizonEnd) break;
+    const endD = parseDate(start); endD.setDate(endD.getDate() + state.period.periodLength - 1);
+    predicted.push({ start, end: fmt(endD) });
+    cursor = start;
+    guard++;
+  }
+  return predicted;
+}
+
+// Returns null (not a period day) or {status:'confirmed'|'predicted'}.
+function periodDayInfo(dateStr){
+  if(!state.period.enabled || state.period.mode !== 'cycle') return null;
+  for(const p of state.period.loggedPeriods){
+    const end = p.end || todayStr(); // ongoing periods count through today
+    if(dateStr >= p.start && dateStr <= end) return { status:'confirmed', id:p.id };
+  }
+  for(const p of predictedPeriods()){
+    if(dateStr >= p.start && dateStr <= p.end) return { status:'predicted' };
+  }
+  return null;
+}
+
+async function startPeriodToday(){
+  state.period.loggedPeriods.push({ id: genId(), start: todayStr(), end: null });
+  await savePeriod();
+  render();
+}
+async function endPeriodToday(){
+  const ongoing = currentOngoingPeriod();
+  if(!ongoing) return;
+  ongoing.end = todayStr();
+  await savePeriod();
+  render();
+}
+async function saveLoggedPeriod(existingId, start, end){
+  if(existingId){
+    const p = state.period.loggedPeriods.find(x=>x.id===existingId);
+    if(p){ p.start = start; p.end = end; }
+  } else {
+    state.period.loggedPeriods.push({ id: genId(), start, end });
+  }
+  await savePeriod();
+  render();
+}
+async function deleteLoggedPeriod(id){
+  state.period.loggedPeriods = state.period.loggedPeriods.filter(p=>p.id!==id);
+  await savePeriod();
+  render();
+}
+
+// Estimates which cycle phase a date falls into, based on average cycle
+// length and a fixed ~14-day luteal phase (the standard approximation,
+// since luteal length is far less variable than follicular length across
+// cycles). This is a statistical estimate from averages, not a measurement.
+function cyclePhaseInfo(dateStr){
+  if(!state.period.enabled || state.period.mode !== 'cycle') return null;
+  const starts = [...state.period.loggedPeriods.map(p=>p.start), ...predictedPeriods().map(p=>p.start)].sort();
+  if(!starts.length) return null;
+  let start = null;
+  for(const s of starts){ if(s <= dateStr) start = s; else break; }
+  if(!start) return null;
+
+  const cLen = state.period.cycleLength;
+  const dayIndex = Math.round((parseDate(dateStr) - parseDate(start)) / DAY_MS);
+  if(dayIndex < 0 || dayIndex >= cLen) return null;
+
+  const pLen = state.period.periodLength;
+  const ovulationDay = Math.max(pLen, cLen - 14);
+  const fertileStart = Math.max(pLen, ovulationDay - 2);
+  const fertileEnd = Math.min(cLen-1, ovulationDay + 1);
+
+  if(dayIndex < pLen) return { phase:'menstrual' };
+  if(dayIndex >= fertileStart && dayIndex <= fertileEnd) return { phase:'ovulation' };
+  if(dayIndex < fertileStart) return { phase:'follicular' };
+  return { phase:'luteal' };
+}
+
+// Pregnancy week/trimester from a due date, via the standard 280-day
+// (40-week) gestation estimate back to last menstrual period.
+function pregnancyWeekInfo(dateStr){
+  if(!state.period.enabled || state.period.mode !== 'pregnancy' || !state.period.pregnancy.dueDate) return null;
+  const due = parseDate(state.period.pregnancy.dueDate);
+  const lmp = new Date(due); lmp.setDate(lmp.getDate() - 280);
+  const diffDays = Math.round((parseDate(dateStr) - lmp) / DAY_MS);
+  if(diffDays < 0) return null;
+  const week = Math.floor(diffDays/7) + 1;
+  if(week > 42) return null;
+  const trimester = week<=13 ? 1 : week<=27 ? 2 : 3;
+  return { week, trimester };
+}
+
+// Returning from pregnancy mode to cycle tracking re-anchors predictions
+// from the real return-of-period date, rather than resuming stale
+// pre-pregnancy predictions — postpartum cycles rarely pick up where they
+// left off.
+async function returnToCycleTracking(returnDateStr){
+  state.period.loggedPeriods.push({ id: genId(), start: returnDateStr, end: null });
+  state.period.mode = 'cycle';
+  await savePeriod();
+  render();
+}
+
+function weeksAlongToDueDate(weeks){
+  const due = new Date();
+  due.setDate(due.getDate() - weeks*7 + 280);
+  return fmt(due);
+}
+
+// One-time migration from the old tap-to-mark model (confirmedStarts +
+// dayOverrides) to explicit logged start/end periods, so existing tracked
+// periods aren't lost when this changes.
+function migratePeriodData(){
+  if((!state.period.loggedPeriods || !state.period.loggedPeriods.length) &&
+     state.period.confirmedStarts && state.period.confirmedStarts.length){
+    state.period.loggedPeriods = state.period.confirmedStarts.map(start=>{
+      const endD = parseDate(start); endD.setDate(endD.getDate() + (state.period.periodLength-1));
+      return { id: genId(), start, end: fmt(endD) };
+    });
+    return true;
+  }
+  return false;
+}
+
+// One-time only: if someone already had real period data from before the
+// enabled/disabled toggle existed, turn it on for them so they don't
+// silently lose visibility of their own history. Guarded by a meta flag so
+// it never re-enables the feature after someone explicitly turns it off.
+function migratePeriodEnabledFlag(){
+  if(state.meta.periodMigrationDone) return false;
+  state.meta.periodMigrationDone = true;
+  if(state.period.loggedPeriods.length>0 || state.period.confirmedStarts.length>0 || state.period.pregnancy.dueDate){
+    state.period.enabled = true;
+  }
+  return true;
+}
+
+/* ============================ FOR THE PLOT ============================ */
+// A curated, categorized list of small acts of self-kindness — deliberately
+// specific rather than generic, so drawing one feels like a little surprise
+// rather than a vague productivity nudge. No checkbox, no streak: this is
+// the one part of the app that's explicitly not about achievement.
+const PLOT_SUGGESTIONS = [
+  { text:"Text an old friend just to say you're thinking of them.", category:'connection' },
+  { text:"Call someone instead of texting them, just this once.", category:'connection' },
+  { text:"Write a short note to someone who helped you recently.", category:'connection' },
+  { text:"Tell someone specifically what you appreciate about them.", category:'connection' },
+  { text:"Sit with someone you love and do absolutely nothing productive.", category:'connection' },
+  { text:"Take the long way home, on purpose.", category:'movement' },
+  { text:"Dance badly to one song, alone, with the door closed.", category:'movement' },
+  { text:"Go outside and just walk, with nowhere in particular to be.", category:'movement' },
+  { text:"Stretch for five minutes like you have nowhere to be.", category:'movement' },
+  { text:"Do the thing your body's been quietly asking for — water, stretch, or sleep.", category:'movement' },
+  { text:"Buy yourself flowers, or pick some if you can.", category:'treat' },
+  { text:"Order the thing you actually wanted, not the 'sensible' one.", category:'treat' },
+  { text:"Wear the good outfit for absolutely no occasion.", category:'treat' },
+  { text:"Light a candle for no reason other than it's nice.", category:'treat' },
+  { text:"Buy the coffee you'd normally talk yourself out of.", category:'treat' },
+  { text:"Let yourself have seconds without a second thought.", category:'treat' },
+  { text:"Take a nap without setting an alarm.", category:'rest' },
+  { text:"Put your phone in another room for one hour.", category:'rest' },
+  { text:"Cancel one thing this week that you were only doing out of obligation.", category:'rest' },
+  { text:"Go to bed early, on purpose, tonight.", category:'rest' },
+  { text:"Sit in silence for five minutes and let your mind wander.", category:'rest' },
+  { text:"Say no to something, without over-explaining why.", category:'rest' },
+  { text:"Go stand outside for a minute and actually notice the sky.", category:'nature' },
+  { text:"Find a patch of sun and just stand in it.", category:'nature' },
+  { text:"Bring a plant home, or repot one you already have.", category:'nature' },
+  { text:"Open every window in the room, just for the air.", category:'nature' },
+  { text:"Sit somewhere outside with your drink instead of at your desk.", category:'nature' },
+  { text:"Make something with your hands — doesn't need to be good.", category:'creativity' },
+  { text:"Write down a memory before it fades, just for you.", category:'creativity' },
+  { text:"Rearrange one small corner of your space to make it nicer.", category:'creativity' },
+  { text:"Put on music from a very specific, very old chapter of your life.", category:'creativity' },
+  { text:"Doodle something ugly on purpose and let it be ugly.", category:'creativity' },
+  { text:"Cook something a little more involved than you needed to.", category:'creativity' },
+];
+
+function shuffleArray(arr){
+  const a = arr.slice();
+  for(let i=a.length-1; i>0; i--){
+    const j = Math.floor(Math.random()*(i+1));
+    [a[i],a[j]] = [a[j],a[i]];
+  }
+  return a;
+}
+
+// Draws the next suggestion from a shuffled cycle through the whole list —
+// no repeats until every suggestion has come up once, then reshuffles.
+function drawPlotSuggestion(){
+  if(!state.plot.shuffledOrder.length || state.plot.pointer >= state.plot.shuffledOrder.length){
+    state.plot.shuffledOrder = shuffleArray(PLOT_SUGGESTIONS.map((_,i)=>i));
+    state.plot.pointer = 0;
+  }
+  const idx = state.plot.shuffledOrder[state.plot.pointer];
+  state.plot.pointer++;
+  savePlot();
+  return PLOT_SUGGESTIONS[idx];
+}
+
+function logPlotAction(){
+  if(!state.currentPlotSuggestion) return;
+  state.plot.log.push({ text: state.currentPlotSuggestion.text, date: todayStr() });
+  state.plotSuggestionOpen = false;
+  savePlot();
+  state.toast = { text: '🌸 Logged — glad you did that.' };
+  render();
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=>{ state.toast=null; render(); }, 3000);
+}
+
+/* ============================ MUTATIONS ============================ */
+function genId(){ return 't' + Date.now() + Math.random().toString(36).slice(2,7); }
+
+const RECUR_HORIZON_DAYS = 90; // how far ahead daily/weekly/monthly tasks are pre-populated
+const RECUR_MAX_GEN = 60;      // safety cap per generation pass
+
+// The horizon must always be wider than the gap between occurrences, or the
+// next one can never fall inside it. Yearly's 365-day gap alone exceeds the
+// standard 90-day horizon, so a yearly task would generate once and then
+// never generate again — exactly wrong for something like a birthday.
+function horizonDaysFor(recurrence){
+  return recurrence==='yearly' ? 400 : RECUR_HORIZON_DAYS;
+}
+
+// Generates future occurrences for a recurring series, starting the day
+// AFTER fromDateStr, up to the rolling horizon. Returns the new task records
+// (not yet pushed into state.tasks).
+function generateSeriesOccurrences(seed, seriesId, fromDateStr){
+  const horizonEnd = fmt(new Date(Date.now() + horizonDaysFor(seed.recurrence)*DAY_MS));
+  const created = [];
+  let cursor = fromDateStr;
+  let guard = 0;
+  while(guard < RECUR_MAX_GEN){
+    const next = nextDueDate(cursor, seed.recurrence);
+    if(next > horizonEnd) break;
+    created.push({
+      id: genId(), type: seed.type || 'task', title: seed.title, category: seed.category, dueDate: next,
+      time: seed.time || '', remindTime: seed.remindTime || '', endTime: seed.endTime || '', notes: seed.notes || '', recurrence: seed.recurrence, seriesId,
+      priority: seed.type==='event' ? false : !!seed.priority, subtasks: [],
+      completed: false, completedAt: null, createdAt: todayStr()
+    });
+    cursor = next;
+    guard++;
+  }
+  return created;
+}
+
+// Tops up every recurring series so it always has occurrences generated out
+// to the rolling horizon — called on load and after completions, since the
+// horizon window shifts forward as time passes.
+function topUpAllSeries(){
+  const seriesMap = {};
+  state.tasks.forEach(t=>{ if(t.seriesId){ (seriesMap[t.seriesId] = seriesMap[t.seriesId]||[]).push(t); } });
+  let changed = false;
+  Object.keys(seriesMap).forEach(sid=>{
+    const items = seriesMap[sid];
+    const maxDue = items.reduce((m,t)=> t.dueDate>m?t.dueDate:m, items[0].dueDate);
+    const seed = items[items.length-1];
+    const horizonEnd = fmt(new Date(Date.now() + horizonDaysFor(seed.recurrence)*DAY_MS));
+    if(maxDue < horizonEnd){
+      const more = generateSeriesOccurrences(seed, sid, maxDue);
+      if(more.length){ state.tasks.push(...more); changed = true; }
+    }
+  });
+  return changed;
+}
+
+// One-time migration: recurring tasks saved under the old "generate one
+// occurrence at a time on completion" model have no seriesId. Adopt them
+// into a series (using their own id) so topUpAllSeries can populate their
+// missing future occurrences retroactively.
+function migrateLegacyRecurring(){
+  let changed = false;
+  state.tasks.forEach(t=>{
+    if(t.recurrence && t.recurrence!=='none' && !t.seriesId){
+      t.seriesId = t.id;
+      changed = true;
+    }
+  });
+  return changed;
+}
+
+// Existing tasks saved before Events existed have no 'type'/'time' fields —
+// default them to plain tasks so nothing silently becomes an event.
+function migrateTaskFields(){
+  let changed = false;
+  state.tasks.forEach(t=>{
+    if(t.type === undefined){ t.type = 'task'; changed = true; }
+    if(t.time === undefined){ t.time = ''; changed = true; }
+    if(t.remindTime === undefined){ t.remindTime = ''; changed = true; }
+    if(t.endTime === undefined){ t.endTime = ''; changed = true; }
+    if(t.priority === undefined){ t.priority = false; changed = true; }
+    if(t.subtasks === undefined){ t.subtasks = []; changed = true; }
+  });
+  return changed;
+}
+
+async function addTask(data){
+  const recurrence = data.recurrence || 'none';
+  const type = data.type === 'event' ? 'event' : 'task';
+  const id = genId();
+  const task = {
+    id,
+    type,
+    title: data.title,
+    category: data.category,
+    dueDate: data.dueDate,
+    time: data.time || '',
+    remindTime: data.remindTime || '',
+    endTime: data.endTime || '',
+    notes: data.notes || '',
+    recurrence,
+    seriesId: recurrence!=='none' ? id : null,
+    priority: type==='event' ? false : !!data.priority,
+    subtasks: type==='event' ? [] : (data.subtasks || []),
+    completed: false,
+    completedAt: null,
+    createdAt: todayStr()
+  };
+  state.tasks.push(task);
+  if(recurrence !== 'none'){
+    const more = generateSeriesOccurrences(task, task.seriesId, task.dueDate);
+    state.tasks.push(...more);
+  }
+  await saveTasks();
+  checkForNewBadges();
+  render();
+
+  if(state.toast){
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(()=>{ state.toast=null; render(); }, 3800);
+  }
+}
+
+async function duplicateTask(id){
+  const orig = state.tasks.find(t=>t.id===id);
+  if(!orig) return;
+
+  const clone = {
+    id: genId(),
+    type: orig.type || 'task', time: orig.time || '', endTime: orig.endTime || '', remindTime: orig.remindTime || '', priority: !!orig.priority,
+    subtasks: (orig.subtasks || []).map(s=>({ id: genId(), title: s.title, completed: false })),
+    title: orig.title,
+    category: orig.category,
+    dueDate: todayStr(),
+    notes: orig.notes,
+    recurrence: 'none',
+    seriesId: null,
+    completed: false,
+    completedAt: null,
+    createdAt: todayStr()
+  };
+  state.tasks.push(clone);
+
+  // Habit-nudge: if this exact title has now been cloned 3+ times (and isn't
+  // already recurring, and hasn't been declined before), suggest turning it
+  // into a real recurring task instead of manually re-adding it each time.
+  const key = orig.title.trim().toLowerCase();
+  if(orig.recurrence==='none' && !state.meta.declinedHabitSuggestions.includes(key)){
+    state.meta.cloneCounts[key] = (state.meta.cloneCounts[key]||0) + 1;
+    if(state.meta.cloneCounts[key] >= 3){
+      state.habitSuggestion = { title: orig.title, key };
+    }
+  }
+
+  await saveTasks();
+  await saveMeta();
+  checkForNewBadges();
+  render();
+}
+
+function acceptHabitSuggestion(){
+  if(!state.habitSuggestion) return;
+  const key = state.habitSuggestion.key;
+  const candidates = state.tasks
+    .filter(t=> t.title.trim().toLowerCase()===key && !t.completed)
+    .sort((a,b)=> b.dueDate.localeCompare(a.dueDate));
+  const target = candidates[0];
+  state.habitSuggestion = null;
+  if(target){
+    state.editingTask = target;
+    state.modalOpen = true;
+  }
+  render();
+}
+
+function declineHabitSuggestion(){
+  if(!state.habitSuggestion) return;
+  state.meta.declinedHabitSuggestions.push(state.habitSuggestion.key);
+  state.habitSuggestion = null;
+  saveMeta();
+  render();
+}
+async function updateTask(id, data){
+  const t = state.tasks.find(x=>x.id===id);
+  if(!t) return;
+  const oldDueDate = t.dueDate;
+  const oldRecurrence = t.recurrence || 'none';
+  const newRecurrence = data.recurrence || 'none';
+  // Editing a finished occurrence never rewrites the rest of its series.
+  const patternChanged = !t.completed && ((newRecurrence !== oldRecurrence) || (data.dueDate !== oldDueDate));
+
+  Object.assign(t, data);
+
+  if(patternChanged){
+    // Drop this series' stale, not-yet-completed future tail — it no
+    // longer matches the (possibly new) pattern or start date.
+    if(t.seriesId){
+      state.tasks = state.tasks.filter(x=> !(x.seriesId===t.seriesId && x.id!==t.id && !x.completed && x.dueDate > oldDueDate));
+    }
+    if(newRecurrence !== 'none'){
+      if(!t.seriesId) t.seriesId = t.id;
+      const more = generateSeriesOccurrences(t, t.seriesId, t.dueDate);
+      state.tasks.push(...more);
+    } else {
+      t.seriesId = null;
+    }
+  }
+
+  await saveTasks();
+  render();
+}
+async function deleteTask(id){
+  state.tasks = state.tasks.filter(x=>x.id!==id);
+  await saveTasks();
+  render();
+}
+let toastTimer = null;
+
+// Dismiss the "element of surprise" popover on any click outside it. A
+// single persistent listener (rather than one attached/detached per render)
+// stays correct across the app's full-DOM-rebuild render cycle. Clicks on
+// the trigger button itself are ignored here since its own handler already
+// manages opening it — without that guard, the very click that opens the
+// popover would also bubble into this listener and immediately close it,
+// because render() has already swapped in a new DOM node by the time the
+// event finishes bubbling.
+document.addEventListener('click', (e)=>{
+  if(!state.plotSuggestionOpen) return;
+  if(e.target.closest && e.target.closest('.plot-btn')) return;
+  const wrap = document.querySelector('.plot-wrap');
+  if(wrap && !wrap.contains(e.target)){
+    state.plotSuggestionOpen = false;
+    render();
+  }
+});
+async function toggleSubtask(taskId, subtaskId){
+  const t = state.tasks.find(x=>x.id===taskId);
+  if(!t || !t.subtasks) return;
+  const st = t.subtasks.find(s=>s.id===subtaskId);
+  if(!st) return;
+  st.completed = !st.completed;
+  await saveTasks();
+  render();
+}
+function toggleSubtaskExpanded(taskId){
+  const idx = state.expandedSubtaskIds.indexOf(taskId);
+  if(idx===-1){ state.expandedSubtaskIds.push(taskId); }
+  else { state.expandedSubtaskIds.splice(idx,1); }
+  render();
+}
+
+async function toggleTask(id){
+  const t = state.tasks.find(x=>x.id===id);
+  if(!t) return;
+  t.completed = !t.completed;
+  t.completedAt = t.completed ? todayStr() : null;
+
+  if(t.completed && t.seriesId){
+    topUpAllSeries(); // keep the series populated out to the rolling horizon
+  }
+  await saveTasks();
+
+  if(t.completed){
+    state.lastToggledId = id;
+    let nextOccurrence = null;
+    if(t.seriesId){
+      const upcoming = state.tasks
+        .filter(x=>x.seriesId===t.seriesId && !x.completed && x.dueDate > t.dueDate)
+        .sort((a,b)=>a.dueDate.localeCompare(b.dueDate));
+      if(upcoming.length) nextOccurrence = upcoming[0];
+    }
+    maybeShowCompletionToast(t, nextOccurrence);
+    checkForNewBadges(); // overrides state.toast if a badge just unlocked
+  } else {
+    state.lastToggledId = null;
+  }
+
+  render();
+
+  if(t.completed){
+    setTimeout(()=>{ if(state.lastToggledId===id){ state.lastToggledId=null; render(); } }, 700);
+  }
+  if(state.toast){
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(()=>{ state.toast=null; render(); }, 3800);
+  }
+}
+function maybeShowCompletionToast(t, nextTask){
+  const today = todayStr();
+  const dueToday = state.tasks.filter(x=>x.type!=='event' && x.dueDate===today);
+  const allTodayDone = dueToday.length>0 && dueToday.every(x=>x.completed);
+  const catThisWeek = state.tasks.filter(x=>x.type!=='event' && x.category===t.category && isInWeek(x.dueDate,0));
+  const allCatDone = catThisWeek.length>1 && catThisWeek.every(x=>x.completed);
+  const weekTasks = state.tasks.filter(x=>x.type!=='event' && isInWeek(x.dueDate,0));
+  const allWeekDone = weekTasks.length>1 && weekTasks.every(x=>x.completed);
+
+  if(allWeekDone){
+    state.toast = { text: '🏁 Whole week cleared. Nice work.' };
+  } else if(allTodayDone){
+    state.toast = { text: '🎉 All clear for today.' };
+  } else if(allCatDone){
+    state.toast = { text: `✓ ${t.category} is fully cleared this week.` };
+  } else {
+    state.toast = null;
+  }
+
+  if(!state.toast && nextTask){
+    state.toast = { text: `↻ Next "${t.title}" scheduled for ${niceDate(nextTask.dueDate)}.` };
+  }
+}
+async function addCategory(name){
+  name = name.trim();
+  if(!name || state.categories.includes(name)) return;
+  state.categories.push(name);
+  await saveCategories();
+  render();
+}
+async function renameApp(name){
+  name = name.trim();
+  if(!name) name = 'WEEKLY';
+  state.meta.appName = name.slice(0,40);
+  await saveMeta();
+  render();
+}
+
+async function setTheme(themeKey){
+  if(!THEMES[themeKey]) return;
+  applyTheme(themeKey);
+  state.meta.theme = themeKey;
+  await saveMeta();
+  render();
+}
+
+/* ============================ REMINDER LOGIC ============================ */
+/* ============================ NOTIFICATION SOUNDS ============================ */
+// Three short tones synthesized with the Web Audio API rather than shipped
+// as audio files — no assets to host, no licensing to worry about, and it
+// works identically everywhere. Kept deliberately soft/short.
+function playTone(ctx, freq, startTime, duration, type='sine', peakGain=0.15){
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.type = type;
+  osc.frequency.value = freq;
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+  gain.gain.setValueAtTime(0, startTime);
+  gain.gain.linearRampToValueAtTime(peakGain, startTime + 0.02);
+  gain.gain.exponentialRampToValueAtTime(0.001, startTime + duration);
+  osc.start(startTime);
+  osc.stop(startTime + duration + 0.02);
+}
+const NOTIFICATION_SOUNDS = {
+  chime: { label:'Chime', desc:'Soft two-note rise', play:(ctx)=>{
+    const now = ctx.currentTime;
+    playTone(ctx, 523.25, now, 0.35, 'sine', 0.15);      // C5
+    playTone(ctx, 659.25, now+0.12, 0.4, 'sine', 0.15);  // E5
+  }},
+  bell: { label:'Bell', desc:'Single warm tone', play:(ctx)=>{
+    const now = ctx.currentTime;
+    playTone(ctx, 440, now, 0.9, 'sine', 0.18);
+    playTone(ctx, 880, now, 0.6, 'sine', 0.06);
+  }},
+  pulse: { label:'Pulse', desc:'Gentle double beep', play:(ctx)=>{
+    const now = ctx.currentTime;
+    playTone(ctx, 660, now, 0.15, 'triangle', 0.15);
+    playTone(ctx, 660, now+0.22, 0.15, 'triangle', 0.15);
+  }},
+  off: { label:'Off', desc:'Silent, popup only', play:()=>{} }
+};
+let sharedAudioCtx = null;
+function getAudioCtx(){
+  if(!sharedAudioCtx){
+    const Ctor = window.AudioContext || window.webkitAudioContext;
+    if(!Ctor) return null;
+    try{ sharedAudioCtx = new Ctor(); }catch(e){ return null; }
+  }
+  if(sharedAudioCtx.state === 'suspended'){ sharedAudioCtx.resume().catch(()=>{}); }
+  return sharedAudioCtx;
+}
+function playNotificationSound(){
+  const key = state.meta.notificationSound || 'chime';
+  if(key === 'off') return;
+  const sound = NOTIFICATION_SOUNDS[key] || NOTIFICATION_SOUNDS.chime;
+  const ctx = getAudioCtx();
+  if(!ctx) return;
+  try{ sound.play(ctx); }catch(e){}
+}
+
+function checkDailyReminder(){
+  const today = todayStr();
+  if(state.meta.lastReminderDate === today) return;
+  const dueThisWeek = state.tasks.filter(t=>!t.completed && isInWeek(t.dueDate,0));
+  const overdue = state.tasks.filter(isOverdue);
+  const dueToday = state.tasks.filter(t=>!t.completed && t.dueDate===today);
+  const hour = new Date().getHours();
+  const greeting = hour < 5 ? 'Still up' : hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
+  state.bannerText = `${greeting}. <b>${dueThisWeek.length}</b> task${dueThisWeek.length===1?'':'s'} due this week, <b>${dueToday.length}</b> due today` + (overdue.length ? `, and <b>${overdue.length}</b> overdue.` : '.');
+  state.showBanner = true;
+  playNotificationSound();
+  if(typeof Notification !== 'undefined' && Notification.permission === 'granted'){
+    try{
+      new Notification('Weekly — Morning Reminder', {
+        body: `${dueThisWeek.length} tasks this week · ${dueToday.length} due today` + (overdue.length ? ` · ${overdue.length} overdue` : ''),
+      });
+    }catch(e){}
+  }
+  state.meta.lastReminderDate = today;
+  saveMeta();
+}
+/* ---------- Per-task reminders: in-app popup + sound, while the tab is open ---------- */
+let reminderPopups = [];
+const snoozeUntil = {};
+const REMINDER_WINDOW_MIN = 120; // a reminder missed by more than this is skipped, not replayed
+
+function checkTaskReminders(){
+  // Never rebuild the DOM under an open form; it would wipe what's being typed.
+  if(!state.loaded || state.modalOpen || state.settingsOpen || state.editingAppName) return;
+  const today = todayStr();
+  const fired = state.meta.firedReminders || (state.meta.firedReminders = {});
+  Object.keys(fired).forEach(k=>{ if(!k.endsWith('|'+today)) delete fired[k]; });
+  const d = new Date(), nowMin = d.getHours()*60 + d.getMinutes(), nowMs = d.getTime();
+  let changed = false;
+  state.tasks.forEach(t=>{
+    if(!t.remindTime || t.completed || t.dueDate!==today) return;
+    if(reminderPopups.some(p=>p.id===t.id)) return;
+    const key = t.id+'|'+today;
+    let due = false;
+    if(snoozeUntil[t.id]){ due = nowMs >= snoozeUntil[t.id]; }
+    else if(!fired[key]){
+      const [h,m] = t.remindTime.split(':').map(Number);
+      const diff = nowMin - (h*60+m);
+      due = diff>=0 && diff<=REMINDER_WINDOW_MIN;
+    }
+    if(!due) return;
+    delete snoozeUntil[t.id];
+    fired[key] = 1; changed = true;
+    reminderPopups.push({ id:t.id });
+    if(typeof Notification !== 'undefined' && Notification.permission === 'granted'){
+      try{ new Notification((state.meta.appName||'Weekly')+' — Reminder', { body: t.title }); }catch(e){}
+    }
+  });
+  if(changed){ saveMeta(); playNotificationSound(); render(); }
+}
+
+function renderReminderPopups(){
+  const wrap = el('div',{class:'reminder-popups'});
+  reminderPopups.forEach(p=>{
+    const t = state.tasks.find(x=>x.id===p.id);
+    if(!t) return;
+    const close = ()=>{ reminderPopups = reminderPopups.filter(x=>x.id!==p.id); };
+    wrap.appendChild(el('div',{class:'reminder-popup'},
+      el('div',{class:'reminder-popup-label'}, (t.type==='event' ? '📌 Event' : '🔔 Reminder')+' · '+formatTime12h(t.remindTime)),
+      el('div',{class:'reminder-popup-title'}, t.title),
+      el('div',{class:'reminder-popup-actions'},
+        t.type==='event' ? null : el('button',{class:'reminder-done-btn', onclick:()=>{ close(); toggleTask(t.id); }}, '✓ Done'),
+        el('button',{onclick:()=>{ snoozeUntil[t.id] = Date.now()+10*60000; close(); render(); }}, 'Snooze 10 min'),
+        el('button',{onclick:()=>{ close(); render(); }}, 'Dismiss')
+      )
+    ));
+  });
+  return wrap;
+}
+
+async function enableNotifications(){
+  if(typeof Notification === 'undefined'){ return; }
+  const perm = await Notification.requestPermission();
+  state.notifPermission = perm;
+  if(perm === 'granted'){
+    // Fire immediately rather than waiting for tomorrow's load — the daily
+    // reminder check already ran once at page load, before you had a
+    // chance to grant permission, so without this you'd see nothing until
+    // the next calendar day (and only if the permission even persisted).
+    const today = todayStr();
+    const dueThisWeek = state.tasks.filter(t=>!t.completed && isInWeek(t.dueDate,0));
+    const overdue = state.tasks.filter(isOverdue);
+    const dueToday = state.tasks.filter(t=>!t.completed && t.dueDate===today);
+    try{
+      new Notification((state.meta.appName||'Weekly') + ' — Notifications on', {
+        body: `${dueThisWeek.length} tasks this week · ${dueToday.length} due today` + (overdue.length ? ` · ${overdue.length} overdue` : '')
+      });
+    }catch(e){}
+    playNotificationSound();
+    state.meta.lastReminderDate = today;
+    saveMeta();
+  }
+  render();
+}
+
+/* ============================ STATS ============================ */
+function computeStats(){
+  const realTasks = state.tasks.filter(t=>t.type!=='event');
+  const completed = realTasks.filter(t=>t.completed);
+  // "Actionable" tasks: due today/earlier, or already completed. Excludes
+  // not-yet-due future rows (including pre-generated recurring occurrences)
+  // from the denominator — you shouldn't be marked down for something
+  // that isn't due yet.
+  const actionable = realTasks.filter(t=> t.completed || t.dueDate <= todayStr());
+  const total = actionable.length;
+  const completionRate = total ? Math.round((completed.length/total)*100) : 0;
+
+  // avg days to complete
+  let avgDays = 0;
+  if(completed.length){
+    const sum = completed.reduce((acc,t)=>{
+      const c = parseDate(t.completedAt), created = parseDate(t.createdAt);
+      return acc + Math.max(0, Math.round((c-created)/DAY_MS));
+    },0);
+    avgDays = (sum/completed.length).toFixed(1);
+  }
+
+  // streak: consecutive days (ending today or yesterday) with >=1 completion
+  const completedDates = new Set(completed.map(t=>t.completedAt));
+  let streak = 0;
+  let cursor = new Date();
+  // allow today to be empty without breaking streak if it's still "in progress"
+  if(!completedDates.has(fmt(cursor))) cursor.setDate(cursor.getDate()-1);
+  while(completedDates.has(fmt(cursor))){
+    streak++;
+    cursor.setDate(cursor.getDate()-1);
+  }
+  let longest = 0, run = 0;
+  const allDates = Array.from(completedDates).sort();
+  for(let i=0;i<allDates.length;i++){
+    if(i===0){ run=1; } else {
+      const prev = parseDate(allDates[i-1]), cur = parseDate(allDates[i]);
+      run = ((cur-prev)/DAY_MS === 1) ? run+1 : 1;
+    }
+    longest = Math.max(longest, run);
+  }
+
+  // weekly buckets (last 8 weeks) for completion % and overdue count
+  const weeks = [];
+  for(let i=7;i>=0;i--){
+    const dates = weekDates(-i);
+    const key = isoWeekKey(fmt(dates[0]));
+    const label = dates[0].toLocaleDateString('en-US',{month:'short',day:'numeric'});
+    const weekDateStrs = dates.map(fmt);
+    const dueThisWeek = realTasks.filter(t=>weekDateStrs.includes(t.dueDate));
+    const doneOnTime = dueThisWeek.filter(t=>t.completed);
+    const rate = dueThisWeek.length ? Math.round((doneOnTime.length/dueThisWeek.length)*100) : null;
+    const overdueCount = dueThisWeek.filter(t=> t.completed ? (t.completedAt > t.dueDate) : (t.dueDate < todayStr())).length;
+    weeks.push({label, rate, overdueCount, hasData: dueThisWeek.length>0});
+  }
+
+  return { total, completedCount: completed.length, completionRate, avgDays, streak, longest, weeks };
+}
+
+function computeInsights(){
+  const stats = computeStats();
+  const insights = [];
+
+  // Week-over-week comparison
+  const weeks = stats.weeks;
+  const thisWk = weeks[weeks.length-1], lastWk = weeks[weeks.length-2];
+  if(thisWk && lastWk && thisWk.hasData && lastWk.hasData){
+    const delta = thisWk.rate - lastWk.rate;
+    if(delta !== 0){
+      insights.push({ icon: delta>0?'▲':'▼', tone: delta>0?'good':'bad',
+        text: `Completion is ${Math.abs(delta)}% ${delta>0?'up':'down'} from last week — ${lastWk.rate}% → ${thisWk.rate}%.` });
+    } else {
+      insights.push({ icon:'■', tone:'neutral', text:`Completion held steady at ${thisWk.rate}% this week.` });
+    }
+  }
+
+  // Best / weakest category
+  const catStats = state.categories.map(cat=>{
+    const tasks = state.tasks.filter(t=>t.type!=='event' && t.category===cat && (t.completed || t.dueDate < todayStr()));
+    const completed = tasks.filter(t=>t.completed).length;
+    return { cat, total: tasks.length, rate: tasks.length ? Math.round(completed/tasks.length*100) : null };
+  }).filter(c=>c.total >= 2);
+  if(catStats.length){
+    const best = catStats.slice().sort((a,b)=>b.rate-a.rate)[0];
+    insights.push({ icon:'★', tone:'good', text:`${best.cat} is your strongest category — ${best.rate}% completed on time.` });
+    const worst = catStats.slice().sort((a,b)=>a.rate-b.rate)[0];
+    if(worst.cat !== best.cat && worst.rate < 70){
+      insights.push({ icon:'⚠', tone:'bad', text:`${worst.cat} tends to slip — only ${worst.rate}% completed on time.` });
+    }
+  }
+
+  // Toughest weekday (most late/overdue tasks land here)
+  const dayNames7 = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
+  const dayCounts = [0,0,0,0,0,0,0];
+  state.tasks.filter(t=>t.type!=='event').forEach(t=>{
+    const wasLate = t.completed ? (t.completedAt > t.dueDate) : isOverdue(t);
+    if(wasLate){ dayCounts[(parseDate(t.dueDate).getDay()+6)%7]++; }
+  });
+  const maxCount = Math.max(...dayCounts);
+  if(maxCount >= 2){
+    insights.push({ icon:'◐', tone:'bad', text:`${dayNames7[dayCounts.indexOf(maxCount)]} tasks are most likely to run late — ${maxCount} so far.` });
+  }
+
+  // Average time-to-close
+  if(stats.completedCount >= 3){
+    insights.push({ icon:'⏱', tone:'neutral', text:`On average you close a task ${stats.avgDays} day${Number(stats.avgDays)===1?'':'s'} after adding it.` });
+  }
+
+  return insights;
+}
+
+/* ============================ XP / LEVELS / BADGES ============================ */
+function computeXp(){
+  let xp = 0;
+  const seenSeries = new Set();
+  state.tasks.filter(t=>t.type!=='event').forEach(t=>{
+    // "Planning" credit: once per standalone task, but only once per
+    // recurring series — otherwise pre-generating a series' future
+    // occurrences would inflate XP as if each were separately planned.
+    if(t.seriesId){
+      if(!seenSeries.has(t.seriesId)){ xp += 5; seenSeries.add(t.seriesId); }
+    } else {
+      xp += 5;
+    }
+    if(t.completed){
+      xp += 15; // credit for follow-through — closing it out
+      if(t.completedAt && t.completedAt <= t.dueDate) xp += 5; // on-time bonus
+    }
+  });
+  return xp;
+}
+function distinctEntryCount(){
+  const seenSeries = new Set();
+  let count = 0;
+  state.tasks.filter(t=>t.type!=='event').forEach(t=>{
+    if(t.seriesId){
+      if(!seenSeries.has(t.seriesId)){ count++; seenSeries.add(t.seriesId); }
+    } else {
+      count++;
+    }
+  });
+  return count;
+}
+function levelInfo(){
+  const xp = computeXp();
+  let level = 1, remaining = xp, threshold = 100;
+  while(remaining >= threshold){
+    remaining -= threshold;
+    level++;
+    threshold = 100 + (level-1)*50;
+  }
+  return { level, xp, xpIntoLevel: remaining, xpForNextLevel: threshold, pct: Math.round((remaining/threshold)*100) };
+}
+
+const BADGES = [
+  { id:'first_task', name:'First Task Closed', icon:'🌱', desc:'Complete your first task.',
+    check:(s)=> s.completedCount >= 1 },
+  { id:'ten_closed', name:'10 Cleared', icon:'✔', desc:'Complete 10 tasks total.',
+    check:(s)=> s.completedCount >= 10 },
+  { id:'fifty_closed', name:'50 Cleared', icon:'🏆', desc:'Complete 50 tasks total.',
+    check:(s)=> s.completedCount >= 50 },
+  { id:'planner', name:'Planner', icon:'🗂', desc:'Add 20 tasks.',
+    check:(s)=> distinctEntryCount() >= 20 },
+  { id:'streak_7', name:'Week Streak', icon:'🔥', desc:'Hit a 7-day completion streak.',
+    check:(s)=> s.longest >= 7 },
+  { id:'streak_30', name:'Month Streak', icon:'🌟', desc:'Hit a 30-day completion streak.',
+    check:(s)=> s.longest >= 30 },
+  { id:'perfect_week', name:'Perfect Week', icon:'💯', desc:'Complete 100% of a week\'s tasks.',
+    check:(s)=> s.weeks.some(w=>w.hasData && w.rate===100) },
+  { id:'early_bird', name:'Early Bird', icon:'🐦', desc:'Complete 5 tasks before their due date.',
+    check:(s)=> state.tasks.filter(t=>t.completed && t.completedAt && t.completedAt < t.dueDate).length >= 5 },
+  { id:'category_master', name:'Category Master', icon:'🎯', desc:'Fully clear a category of 5+ tasks.',
+    check:(s)=> state.categories.some(cat=>{
+      const tasks = state.tasks.filter(t=>t.type!=='event' && t.category===cat && (t.completed || t.dueDate < todayStr()));
+      return tasks.length >= 5 && tasks.every(t=>t.completed);
+    }) },
+];
+
+function computeAchievements(){
+  const stats = computeStats();
+  return BADGES.map(b=> Object.assign({}, b, { unlocked: b.check(stats) }));
+}
+
+function checkForNewBadges(){
+  const achievements = computeAchievements();
+  const unlockedIds = achievements.filter(a=>a.unlocked).map(a=>a.id);
+  const seen = state.meta.seenBadges || [];
+  const newlyUnlocked = achievements.filter(a=>a.unlocked && !seen.includes(a.id));
+  if(newlyUnlocked.length){
+    state.meta.seenBadges = Array.from(new Set([...seen, ...unlockedIds]));
+    saveMeta();
+    const first = newlyUnlocked[0];
+    const extra = newlyUnlocked.length>1 ? ` (+${newlyUnlocked.length-1} more)` : '';
+    state.toast = { text: `🏅 Achievement unlocked: ${first.name}${extra}` };
+  }
+  return newlyUnlocked;
+}
+
+/* ============================ YEAR IN REVIEW ============================ */
+const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+
+function computeYearStats(year){
+  const yearTasks = state.tasks.filter(t=> t.completed && t.completedAt && t.completedAt.slice(0,4)===String(year));
+  const totalCompleted = yearTasks.length;
+
+  const monthCounts = Array(12).fill(0);
+  yearTasks.forEach(t=>{ const m = parseInt(t.completedAt.slice(5,7),10)-1; monthCounts[m]++; });
+  let busiestMonthIdx = -1;
+  monthCounts.forEach((c,i)=>{ if(c>0 && (busiestMonthIdx===-1 || c>monthCounts[busiestMonthIdx])) busiestMonthIdx=i; });
+
+  const catCounts = {};
+  yearTasks.forEach(t=> catCounts[t.category]=(catCounts[t.category]||0)+1);
+  const topCategoryEntry = Object.entries(catCounts).sort((a,b)=>b[1]-a[1])[0] || null;
+
+  const datesSet = new Set(yearTasks.map(t=>t.completedAt));
+  const sortedDates = [...datesSet].sort();
+  let longest=0, run=0;
+  sortedDates.forEach((d,i)=>{
+    if(i===0){ run=1; } else {
+      const prev=parseDate(sortedDates[i-1]), cur=parseDate(d);
+      run = (Math.round((cur-prev)/DAY_MS)===1) ? run+1 : 1;
+    }
+    longest=Math.max(longest,run);
+  });
+
+  const plotCount = state.plot.log.filter(e=> e.date && e.date.slice(0,4)===String(year)).length;
+
+  return { year, totalCompleted, monthCounts, busiestMonthIdx, topCategory: topCategoryEntry, longest, plotCount };
+}
+
+// Deliberately avoids a "performance report" tone. A quiet year gets a
+// restful, aspirational framing rather than a lower score — the point is to
+// find something true and warm to say regardless of how much got done.
+function yearToneInfo(stats){
+  if(stats.totalCompleted < 20){
+    return {
+      title: 'A Restful Year',
+      metaphor: (stats.totalCompleted===0 && stats.plotCount===0)
+        ? "Some years are quiet by design. Nothing bloomed loudly here — but the soil is still there, waiting for spring."
+        : "Not every year is for growing loudly. This one looks more like a seed resting in the soil — quiet, but never empty."
+    };
+  }
+  if(stats.totalCompleted < 150){
+    return {
+      title: 'A Steady Year',
+      metaphor: "Slow, steady growth — the kind that doesn't always show day to day, but adds up all the same."
+    };
+  }
+  return {
+    title: 'A Flourishing Year',
+    metaphor: "A year in full bloom — task after task, day after day, building into something real."
+  };
+}
+
+// Points out specific things that went well, based on actual activity —
+// never invented, never a criticism of what didn't happen.
+function wellDoneLines(stats){
+  const lines = [];
+  if(stats.topCategory){ lines.push(`${stats.topCategory[0]} was where you showed up most — ${stats.topCategory[1]} task${stats.topCategory[1]===1?'':'s'} closed there.`); }
+  if(stats.longest >= 3){ lines.push(`Your longest streak reached ${stats.longest} days in a row.`); }
+  if(stats.plotCount > 0){ lines.push(`You did something just for yourself ${stats.plotCount} time${stats.plotCount===1?'':'s'} this year.`); }
+  if(stats.busiestMonthIdx >= 0){ lines.push(`${MONTH_NAMES[stats.busiestMonthIdx]} was your busiest month.`); }
+  if(!lines.length){ lines.push('Every year has its own shape — this one was yours.'); }
+  return lines.slice(0,3);
+}
+
+function downloadWrappedCard(){
+  const node = document.getElementById('wrapped-card');
+  if(!node || !window.html2canvas) return;
+  const bg = getComputedStyle(document.documentElement).getPropertyValue('--surface').trim() || THEMES.moonlit.exportBg;
+  window.html2canvas(node, { backgroundColor: bg, scale:2 }).then(canvas=>{
+    const link = document.createElement('a');
+    const appSlug = (state.meta.appName||'weekly').toLowerCase().replace(/\s+/g,'-');
+    link.download = `${appSlug}-${node.dataset.year}-wrapped.png`;
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+  }).catch(err=>{ console.error('Wrapped export failed', err); });
+}
+
+// Shared season check: mid-December through mid-January. Used both by the
+// one-time auto-popup and by whether the Report tab shows the panel at all —
+// this was meant to be a seasonal thing, not a year-round fixture.
+function wrappedSeasonInfo(){
+  const now = new Date();
+  const month = now.getMonth(); // 0-indexed; 11 = December
+  const day = now.getDate();
+  const inSeason = (month===11 && day>=15) || (month===0 && day<=15);
+  const targetYear = month===0 ? now.getFullYear()-1 : now.getFullYear();
+  return { inSeason, targetYear };
+}
+
+// Surfaces the review automatically once per season. Uses last year's data
+// during the January portion (so the review is always for a completed
+// year, not a fragment).
+function checkWrappedTrigger(){
+  const { inSeason, targetYear } = wrappedSeasonInfo();
+  if(!inSeason) return;
+  if(!state.meta.wrappedSeenYears.includes(targetYear)){
+    state.showWrappedIntro = true;
+    state.wrappedIntroYear = targetYear;
+    state.meta.wrappedSeenYears.push(targetYear);
+    saveMeta();
+  }
+}
+
+function getUpcomingTasks(daysAhead){
+  const start = todayStr();
+  const endD = new Date(); endD.setDate(endD.getDate()+daysAhead);
+  const end = fmt(endD);
+  // Recurring series are pre-generated out to a 90-day horizon (see
+  // generateSeriesOccurrences), which comfortably covers this window, so
+  // every upcoming occurrence already exists as a real task — no need to
+  // project virtual ones (which would just duplicate them).
+  return state.tasks
+    .filter(t=>!t.completed && t.dueDate>=start && t.dueDate<=end)
+    .sort((a,b)=> a.dueDate.localeCompare(b.dueDate) || a.title.localeCompare(b.title));
+}
+
+/* ============================ RENDER ============================ */
+let chartInstances = [];
+
+function el(tag, attrs={}, ...children){
+  const e = document.createElement(tag);
+  for(const [k,v] of Object.entries(attrs)){
+    if(k==='class') e.className = v;
+    else if(k==='html') e.innerHTML = v;
+    else if(k.startsWith('on') && typeof v==='function') e.addEventListener(k.slice(2), v);
+    else e.setAttribute(k,v);
+  }
+  children.flat().forEach(c=>{
+    if(c==null) return;
+    const isPrimitive = typeof c==='string' || typeof c==='number' || typeof c==='boolean';
+    e.appendChild(isPrimitive ? document.createTextNode(String(c)) : c);
+  });
+  return e;
+}
+
+function catColor(cat){
+  const idx = state.categories.indexOf(cat);
+  return CAT_COLORS[idx % CAT_COLORS.length] || 'var(--text-dim)';
+}
+
+function render(){
+  const app = document.getElementById('app');
+
+  // Capture focus/selection state before wiping the DOM, so we can restore it
+  // after rebuilding — avoids relying on blur events, which fire synchronously
+  // during teardown and race against any flag-based refocus logic. Generalized
+  // to any focusable element with a stable id (search box, rename field, etc).
+  const activeEl = document.activeElement;
+  const focusedId = (activeEl && activeEl.id) ? activeEl.id : null;
+  const isTextInput = focusedId && (activeEl.tagName==='INPUT' || activeEl.tagName==='TEXTAREA');
+  const selStart = isTextInput ? activeEl.selectionStart : null;
+  const selEnd = isTextInput ? activeEl.selectionEnd : null;
+
+  app.innerHTML = '';
+  chartInstances.forEach(c=>c.destroy());
+  chartInstances = [];
+
+  app.appendChild(renderHeader());
+  app.appendChild(renderPulse());
+  if(state.habitSuggestion){ app.appendChild(renderHabitBanner()); }
+  { const pn = renderPeriodNoticeBanner(); if(pn){ app.appendChild(pn); } }
+  if(state.updateAvailable){ app.appendChild(renderUpdateBanner()); }
+  if(state.showBanner){ app.appendChild(renderBanner()); }
+  else if(state.notifPermission === 'default'){ app.appendChild(renderEnableBanner()); }
+
+  if(state.searchQuery.trim()){
+    app.appendChild(renderSearchView());
+  } else if(state.view === 'week'){
+    app.appendChild(renderWeekView());
+  } else if(state.view === 'calendar'){
+    app.appendChild(renderCalendarTabView());
+  } else if(state.view === 'upcoming'){
+    app.appendChild(renderUpcomingView());
+  } else if(state.view === 'all'){
+    app.appendChild(renderAllTasksView());
+  } else if(state.view === 'completed'){
+    app.appendChild(renderCompletedView());
+  } else {
+    app.appendChild(renderReportView());
+  }
+
+  app.appendChild(el('div',{class:'fine'}, '◆ '+(state.meta.appName||'WEEKLY')+' — your task console · saving via ' + (hasCloudStorage ? 'Claude.ai storage' : 'this browser (localStorage)')));
+
+  if(state.toast){ app.appendChild(el('div',{class:'toast'}, state.toast.text)); }
+
+  if(reminderPopups.length){ app.appendChild(renderReminderPopups()); }
+  if(state.modalOpen){ app.appendChild(renderModal()); }
+  if(state.showWrappedIntro){ app.appendChild(renderWrappedModal()); }
+  if(state.settingsOpen){ app.appendChild(renderSettingsModal()); }
+
+  if(focusedId){
+    const newInput = document.getElementById(focusedId);
+    if(newInput){
+      newInput.focus();
+      if(selStart!=null){ newInput.setSelectionRange(selStart, selEnd); }
+    }
+  }
+}
+
+function renderHeader(){
+  const stats = computeStats();
+  const lvl = levelInfo();
+  const appName = state.meta.appName || 'WEEKLY';
+  const searchInput = el('input',{id:'search-input', type:'text', placeholder:'Search tasks…', value: state.searchQuery,
+    oninput:(e)=>{ state.searchQuery = e.target.value; render(); }
+  });
+
+  let brand;
+  if(state.editingAppName){
+    const nameInput = el('input',{id:'appname-input', class:'appname-input', type:'text', value: appName, maxlength:'40',
+      oninput:(e)=>{ state.meta.appName = e.target.value; render(); },
+      onkeydown:(e)=>{ if(e.key==='Enter'){ e.target.blur(); } if(e.key==='Escape'){ state.editingAppName=false; render(); } },
+      onblur:(e)=>{
+        const val = e.target.value;
+        // Defer: our own render() removes/rebuilds this input on every keystroke,
+        // which fires a native blur synchronously even though the user never
+        // actually left the field. By checking one tick later, we can tell a
+        // real blur (focus moved elsewhere) from our own re-render (a fresh
+        // input with the same id gets refocused before this timeout runs).
+        setTimeout(()=>{
+          const stillEditing = document.activeElement && document.activeElement.id === 'appname-input';
+          if(state.editingAppName && !stillEditing){
+            renameApp(val);
+            state.editingAppName = false;
+          }
+        }, 0);
+      }
+    });
+    brand = el('div',{class:'brand'}, nameInput);
+  } else {
+    brand = el('div',{class:'brand', title:'Click to rename', onclick:()=>{ state.editingAppName=true; render(); }},
+      el('h1',{}, appName, el('span',{class:'dot'},' ●')),
+      el('span',{class:'rename-hint'}, '✎')
+    );
+  }
+
+  const header = el('header',{class:'top'},
+    brand,
+    el('nav',{class:'tabs'},
+      el('button',{class: state.view==='week' ? 'active':'', onclick:()=>{state.view='week'; state.searchQuery=''; render();}}, 'This Week'),
+      el('button',{class: state.view==='calendar' ? 'active':'', onclick:()=>{state.view='calendar'; state.searchQuery=''; render();}}, 'Calendar'),
+      el('button',{class: state.view==='upcoming' ? 'active':'', onclick:()=>{state.view='upcoming'; state.searchQuery=''; state.calendarSelectedDate=null; render();}}, 'Upcoming'),
+      el('button',{class: state.view==='all' ? 'active':'', onclick:()=>{state.view='all'; state.searchQuery=''; state.calendarSelectedDate=null; render();}}, 'All Tasks'),
+      el('button',{class: state.view==='completed' ? 'active':'', onclick:()=>{state.view='completed'; state.searchQuery=''; state.calendarSelectedDate=null; render();}}, 'Completed'),
+      el('button',{class: state.view==='report' ? 'active':'', onclick:()=>{state.view='report'; state.searchQuery=''; state.calendarSelectedDate=null; render();}}, 'Report'),
+    ),
+    el('div',{class:'search-wrap'},
+      el('span',{class:'icon'}, '⌕'),
+      searchInput,
+      state.searchQuery ? el('button',{class:'clear', onclick:()=>{ state.searchQuery=''; render(); }}, '✕') : null
+    ),
+    el('div',{class:'level-badge', title:`${lvl.xpIntoLevel} / ${lvl.xpForNextLevel} XP to Level ${lvl.level+1}`},
+      '⚡ Lv ' + lvl.level,
+      el('div',{class:'level-bar-bg'}, el('div',{class:'level-bar-fill', style:`width:${lvl.pct}%`}))
+    ),
+    stats.streak>0 ? el('div',{class:'streak-badge'}, '🔥 ', String(stats.streak)+'-day streak') : null,
+    el('div',{class:'plot-wrap'},
+      el('button',{class:'plot-btn', title:'The Element of Surprise', onclick:()=>{
+        state.currentPlotSuggestion = drawPlotSuggestion();
+        state.plotSuggestionOpen = true;
+        render();
+      }},
+        '✨',
+        el('span',{class:'plot-spark s1'}),
+        el('span',{class:'plot-spark s2'}),
+        el('span',{class:'plot-spark s3'})
+      ),
+      state.plotSuggestionOpen ? renderPlotPopover() : null
+    ),
+    el('button',{class:'settings-btn', title:'Settings', onclick:()=>{ state.settingsOpen = true; render(); }}, '⚙')
+  );
+  return header;
+}
+
+function renderThemeSwatchGrid(){
+  const grid = el('div',{class:'settings-theme-grid'});
+  THEME_ORDER.forEach(key=>{
+    const theme = THEMES[key];
+    const isActive = state.currentTheme === key;
+    grid.appendChild(el('button',{
+      class:'theme-option'+(isActive?' active':''),
+      onclick:()=>{ setTheme(key); }
+    },
+      el('span',{class:'theme-swatch-preview', style:`background:${theme.vars['--bg']}; border-color:${theme.vars['--accent']};`},
+        el('span',{class:'theme-swatch-dot', style:`background:${theme.vars['--accent']};`})
+      ),
+      el('span',{class:'theme-option-label'}, theme.label),
+      isActive ? el('span',{class:'theme-option-check'}, '✓') : null
+    ));
+  });
+  return grid;
+}
+
+function exportBackup(){
+  state.meta.lastBackupDate = todayStr();
+  saveMeta();
+  const payload = { app:'weekly', version:1, exportedAt:new Date().toISOString(),
+    data:{ tasks:state.tasks, categories:state.categories, meta:state.meta, period:state.period, plot:state.plot } };
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(payload,null,2)],{type:'application/json'}));
+  a.download = 'weekly-backup-'+todayStr()+'.json';
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href), 1000);
+  render();
+}
+
+function importBackup(){
+  const inp = document.createElement('input');
+  inp.type = 'file'; inp.accept = '.json,application/json';
+  inp.onchange = async ()=>{
+    const f = inp.files[0]; if(!f) return;
+    let p;
+    try{ p = JSON.parse(await f.text()); }catch(e){ alert("That file couldn't be read as a backup."); return; }
+    const d = p && p.data;
+    if(!p || p.app!=='weekly' || !d || !Array.isArray(d.tasks) || !Array.isArray(d.categories)){
+      alert("This doesn't look like a Weekly backup file."); return;
+    }
+    const when = p.exportedAt ? p.exportedAt.slice(0,10) : 'unknown date';
+    if(!confirm('Replace everything in the app with the backup from '+when+' ('+d.tasks.length+' items)? What is in the app now will be overwritten.')) return;
+    state.tasks = d.tasks;
+    state.categories = d.categories.length ? d.categories : state.categories;
+    state.meta = Object.assign({}, state.meta, d.meta || {});
+    state.period = Object.assign({ cycleLength:28, periodLength:5, confirmedStarts:[], dayOverrides:{}, loggedPeriods:[], mode:'cycle', pregnancy:{dueDate:null}, enabled:false }, d.period || {});
+    state.plot = Object.assign({ shuffledOrder:[], pointer:0, log:[] }, d.plot || {});
+    migrateTaskFields(); migrateLegacyRecurring(); topUpAllSeries(); migratePeriodData();
+    applyTheme(state.meta.theme);
+    await saveTasks(); await saveCategories(); await saveMeta(); await savePeriod(); await savePlot();
+    state.settingsOpen = false;
+    state.toast = { text:'✓ Backup restored.' };
+    render();
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(()=>{ state.toast=null; render(); }, 3500);
+  };
+  inp.click();
+}
+
+async function resetAllData(){
+  state.tasks = [];
+  state.categories = ['Work','Home','Health'];
+  state.period = { cycleLength:28, periodLength:5, confirmedStarts:[], dayOverrides:{}, loggedPeriods:[], mode:'cycle', pregnancy:{dueDate:null}, enabled:false };
+  state.plot = { shuffledOrder:[], pointer:0, log:[] };
+  state.meta = { lastReminderDate:null, seenBadges:[], appName:'WEEKLY', calendarPlacement:'sidebar', cloneCounts:{}, declinedHabitSuggestions:[], wrappedSeenYears:[], theme:'moonlit', periodMigrationDone:true, notificationSound:'chime' };
+  applyTheme('moonlit');
+  await saveTasks();
+  await saveCategories();
+  await savePeriod();
+  await savePlot();
+  await saveMeta();
+  state.settingsOpen = false;
+  render();
+}
+
+function renderSettingsModal(){
+  const appName = state.meta.appName || 'WEEKLY';
+  const nameInput = el('input',{type:'text', value:appName, maxlength:'40', placeholder:'App name'});
+
+  const modal = el('div',{class:'modal settings-modal'},
+    el('h2',{}, '⚙ Settings'),
+
+    el('div',{class:'settings-section'},
+      el('div',{class:'settings-section-title'}, 'App Name'),
+      el('div',{class:'field'}, nameInput),
+      el('button',{class:'settings-action-btn', onclick:()=>{ renameApp(nameInput.value); render(); }}, 'Save name')
+    ),
+
+    el('div',{class:'settings-section'},
+      el('div',{class:'settings-section-title'}, 'Theme'),
+      renderThemeSwatchGrid()
+    ),
+
+    el('div',{class:'settings-section'},
+      el('div',{class:'settings-section-title'}, 'Notifications'),
+      el('div',{class:'settings-row'},
+        el('span',{}, state.notifPermission==='granted' ? '● Reminders on'
+          : state.notifPermission==='unsupported' ? 'Not supported in this browser'
+          : 'Get a morning reminder while this tab is open'),
+        state.notifPermission!=='granted' && state.notifPermission!=='unsupported'
+          ? el('button',{class:'settings-action-btn', onclick: enableNotifications}, 'Enable') : null
+      ),
+      el('div',{class:'settings-subsection-title'}, 'Notification Sound'),
+      el('div',{class:'sound-option-grid'},
+        Object.entries(NOTIFICATION_SOUNDS).map(([key,sound])=>{
+          const isActive = (state.meta.notificationSound||'chime') === key;
+          return el('button',{
+            class:'sound-option'+(isActive?' active':''),
+            onclick:()=>{ state.meta.notificationSound = key; saveMeta(); playNotificationSound(); render(); }
+          },
+            el('span',{class:'sound-option-radio'+(isActive?' checked':'')}),
+            el('span',{class:'sound-option-text'},
+              el('span',{class:'sound-option-label'}, sound.label),
+              el('span',{class:'sound-option-desc'}, sound.desc)
+            ),
+            el('span',{class:'sound-option-play'}, '▶')
+          );
+        })
+      )
+    ),
+
+    el('div',{class:'settings-section'},
+      el('div',{class:'settings-section-title'}, 'Health Tracking'),
+      el('label',{class:'settings-toggle-row'},
+        el('input',{type:'checkbox', ...(state.period.enabled?{checked:'checked'}:{}),
+          onchange:(e)=>{ state.period.enabled = e.target.checked; savePeriod(); render(); }
+        }),
+        ' Period & cycle tracking'
+      ),
+      state.period.enabled ? el('div',{class:'settings-row', style:'margin:4px 0 8px;'},
+        el('span',{}, 'Heads-up before expected start'),
+        el('select',{class:'calendar-placement-select', onchange:(e)=>{ state.meta.periodLeadDays = parseInt(e.target.value,10); saveMeta(); render(); }},
+          [[0,'Off'],[1,'1 day'],[2,'2 days'],[3,'3 days'],[5,'5 days'],[7,'7 days']].map(([v,l])=> el('option',{value:String(v), ...(periodLeadDays()===v?{selected:'selected'}:{})}, l))
+        )
+      ) : null,
+      state.period.enabled ? el('div',{class:'settings-hint', style:'margin-bottom:8px;'}, 'A check-in the day after an expected start is always on while tracking is enabled. Notices appear while the app is open.') : null,
+      el('div',{class:'settings-hint'}, "Adds a calendar toggle for logging periods, cycle-phase estimates, and pregnancy mode. Off by default for new installs — nothing shows unless this is switched on.")
+    ),
+
+    el('div',{class:'settings-section'},
+      el('div',{class:'settings-section-title'}, 'Backup'),
+      el('div',{class:'settings-hint'}, (state.meta.lastBackupDate ? 'Last backup: '+niceDateLong(state.meta.lastBackupDate)+'. ' : 'No backup yet. ') + 'Saves everything (tasks, categories, period history, preferences) to a file you keep. Restoring replaces what is in the app now.'),
+      el('div',{style:'display:flex; gap:8px; margin-top:10px; flex-wrap:wrap;'},
+        el('button',{class:'settings-action-btn', onclick: exportBackup}, '⬇ Save backup'),
+        el('button',{class:'quickadd-full-btn', onclick: importBackup}, '⬆ Restore from backup')
+      )
+    ),
+
+    el('div',{class:'settings-section settings-danger-zone'},
+      el('div',{class:'settings-section-title'}, 'Data'),
+      el('div',{class:'settings-hint'}, 'For giving someone else a clean copy of this app — clears every task, category, period entry, and preference stored on this device or account.'),
+      el('button',{class:'settings-danger-btn', onclick:()=>{
+        if(confirm('This clears every task, category, period entry, and preference. This cannot be undone. Save a backup first if you may want this data. Continue?')){
+          resetAllData();
+        }
+      }}, '🗑 Reset all data')
+    ),
+
+    el('div',{class:'modal-actions'},
+      el('button',{class:'primary', onclick:()=>{ state.settingsOpen=false; render(); }}, 'Close')
+    )
+  );
+  return el('div',{class:'overlay', onclick:(e)=>{ if(e.target.classList.contains('overlay')){ state.settingsOpen=false; render(); } }}, modal);
+}
+
+function renderPlotPopover(){
+  return el('div',{class:'plot-popover sparkle-burst'},
+    el('div',{class:'plot-popover-label'}, '✨ The Element of Surprise'),
+    el('div',{class:'plot-popover-text'}, state.currentPlotSuggestion.text),
+    el('div',{class:'plot-popover-actions'},
+      el('button',{class:'plot-ack-btn', onclick: logPlotAction}, '💛 I did this'),
+      el('button',{class:'plot-dismiss-btn', onclick:()=>{ state.plotSuggestionOpen=false; render(); }}, 'Maybe later')
+    )
+  );
+}
+
+
+function renderPulse(){
+  const offset = state.weekOffset;
+  const dates = weekDates(offset);
+  const today = todayStr();
+  const maxima = dates.map(d=>{
+    const ds = fmt(d);
+    const due = state.tasks.filter(t=>t.type!=='event' && t.dueDate===ds);
+    const done = due.filter(t=>t.completed);
+    return due.length ? done.length/due.length : 0;
+  });
+  const stats = computeStats();
+  const track = el('div',{class:'pulse-track'});
+  dates.forEach((d,i)=>{
+    const ds = fmt(d);
+    const isToday = ds===today;
+    const pct = Math.round(maxima[i]*100);
+    track.appendChild(el('div',{class:'pulse-day'+(isToday?' today':'')},
+      el('div',{class:'pulse-today-dot', style: isToday ? '' : 'visibility:hidden'}),
+      el('div',{class:'pulse-bar-bg'},
+        el('div',{class:'pulse-bar-fill', style:`height:${Math.max(pct,4)}%`})
+      ),
+      el('div',{class:'pulse-day-label'+(isToday?' today':'')}, DAY_NAMES[i])
+    ));
+  });
+  const pulseLabel = offset===0 ? 'Weekly Pulse' : 'Weekly Pulse · ' + weekLabel(offset);
+  const weeks = stats.weeks;
+  const thisWk = weeks[weeks.length-1], lastWk = weeks[weeks.length-2];
+  let deltaEl = null;
+  if(thisWk && lastWk && thisWk.hasData && lastWk.hasData){
+    const delta = thisWk.rate - lastWk.rate;
+    const dir = delta>0?'up':delta<0?'down':'flat';
+    const arrow = delta>0?'▲':delta<0?'▼':'■';
+    deltaEl = el('div',{class:'pulse-delta '+dir}, `${arrow} ${Math.abs(delta)}% vs last wk`);
+  }
+  return el('div',{class:'pulse-wrap'},
+    el('div',{},
+      el('div',{class:'pulse-label'}, pulseLabel),
+      el('div',{class:'pulse-legend', style:'margin-top:6px;'},
+        el('span',{class:'sw done'}), 'completed that day',
+        el('span',{style:'width:10px;display:inline-block;'}),
+        el('span',{class:'sw today'}), 'today'
+      )
+    ),
+    track,
+    el('div',{},
+      el('div',{class:'pulse-score'}, stats.completionRate+'%', el('span',{},'all-time')),
+      deltaEl
+    )
+  );
+}
+
+
+function periodNoticeStore(){
+  const m = state.meta;
+  if(!m.periodNotice) m.periodNotice = { dismissed:{}, snoozeUntil:{}, fired:{} };
+  return m.periodNotice;
+}
+function periodLeadDays(){ const v = state.meta.periodLeadDays; return v === undefined ? 2 : v; }
+
+// Decides which period notice (if any) applies today. Pure: reads state, changes nothing.
+//  headsup: 1..N days before the expected start (N = setting; 0 turns heads-ups off)
+//  dayof:   the expected start day itself
+//  checkin: from the day after the expected start, until it's logged, skipped, or snoozed to a later day
+function currentPeriodNotice(){
+  if(!state.period.enabled || state.period.mode !== 'cycle' || !state.period.loggedPeriods.length) return null;
+  if(currentOngoingPeriod()) return null;
+  const next = predictedPeriods()[0];
+  if(!next) return null;
+  const store = periodNoticeStore();
+  const today = todayStr();
+  const days = Math.round((parseDate(next.start) - parseDate(today)) / DAY_MS);
+  const lead = periodLeadDays();
+  if(days >= 1 && days <= lead){ return store.dismissed[next.start+'|h'] ? null : { kind:'headsup', start:next.start, days }; }
+  if(days === 0 && lead > 0){ return store.dismissed[next.start+'|h'] ? null : { kind:'dayof', start:next.start, days }; }
+  if(days <= -1){
+    if(store.dismissed[next.start+'|c']) return null;
+    if((store.snoozeUntil[next.start] || '') > today) return null;
+    return { kind:'checkin', start:next.start, days:-days };
+  }
+  return null;
+}
+
+function periodNoticeText(n){
+  if(n.kind === 'headsup') return '🩸 Your period is estimated to start in ' + n.days + ' day' + (n.days===1?'':'s') + ' (around ' + niceDate(n.start) + ').';
+  if(n.kind === 'dayof') return '🩸 Your period is estimated to start today.';
+  return '🩸 Quick check-in: your period was expected around ' + niceDate(n.start) + '. Has it started? No pressure, this just keeps your log accurate.';
+}
+function tomorrowStr(){ const d = new Date(); d.setDate(d.getDate()+1); return fmt(d); }
+function goLogPeriodOn(startStr){
+  const d = parseDate(startStr), now = new Date();
+  state.view = 'calendar'; state.searchQuery = '';
+  state.calendarMonthOffset = (d.getFullYear()-now.getFullYear())*12 + (d.getMonth()-now.getMonth());
+  state.calendarSelectedDate = startStr;
+  state.periodEditingEntry = null; state.periodLogFormOpen = true;
+  render();
+}
+function renderPeriodNoticeBanner(){
+  const n = currentPeriodNotice();
+  if(!n) return null;
+  const store = periodNoticeStore();
+  const dismiss = (k)=>{ store.dismissed[k] = 1; saveMeta(); render(); };
+  const actions = n.kind === 'checkin' ? [
+    el('button',{class:'habit-accept-btn', onclick:()=>{ startPeriodToday(); }}, 'Yes, it started today'),
+    el('button',{onclick:()=>{ goLogPeriodOn(n.start); }}, 'It started another day'),
+    el('button',{onclick:()=>{ store.snoozeUntil[n.start] = tomorrowStr(); saveMeta(); render(); }}, 'Not yet'),
+    el('button',{onclick:()=>{ dismiss(n.start+'|c'); }}, 'Skip this cycle')
+  ] : [
+    n.kind === 'dayof' ? el('button',{class:'habit-accept-btn', onclick:()=>{ startPeriodToday(); }}, 'It started') : null,
+    el('button',{onclick:()=>{ dismiss(n.start+'|h'); }}, 'Got it')
+  ];
+  return el('div',{class:'banner period-notice'}, el('div',{class:'msg'}, periodNoticeText(n)), el('div',{class:'period-notice-actions'}, actions));
+}
+
+// Runs at load, on returning to the tab, and every 15 minutes (so it also catches midnight).
+// Sound plus a system notification fire once per notice per day. The system notification is
+// deliberately generic, since lock screens are visible to other people; details stay in the app.
+let lastPeriodNoticeKey = null;
+function checkPeriodNotice(){
+  if(!state.loaded || state.modalOpen || state.settingsOpen || state.editingAppName) return;
+  const n = currentPeriodNotice();
+  const key = n ? n.kind+'|'+n.start+'|'+todayStr() : '';
+  if(key === lastPeriodNoticeKey) return;
+  lastPeriodNoticeKey = key;
+  if(n){
+    const store = periodNoticeStore();
+    Object.keys(store.fired).forEach(k=>{ if(!k.endsWith('|'+todayStr())) delete store.fired[k]; });
+    if(!store.fired[key]){
+      store.fired[key] = 1; saveMeta(); playNotificationSound();
+      if(typeof Notification !== 'undefined' && Notification.permission === 'granted'){
+        try{ new Notification(state.meta.appName || 'Weekly', { body:'You have a check-in waiting.' }); }catch(e){}
+      }
+    }
+  }
+  render();
+}
+
+function renderBanner(){
+  return el('div',{class:'banner'},
+    el('div',{class:'msg', html: state.bannerText}),
+    el('button',{onclick:()=>{state.showBanner=false; render();}}, 'Dismiss')
+  );
+}
+function renderEnableBanner(){
+  return el('div',{class:'enable-banner'},
+    el('div',{},
+      'Turn on browser notifications to get a morning reminder while this tab is open. ',
+      el('span',{class:'enable-banner-note'}, "If it keeps re-asking after a reload, that's your browser not retaining the permission for this embedded view — try opening this file directly in its own browser tab for it to stick.")
+    ),
+    el('button',{onclick: enableNotifications}, 'Enable')
+  );
+}
+
+function renderHabitBanner(){
+  const { title } = state.habitSuggestion;
+  return el('div',{class:'banner habit-banner'},
+    el('div',{class:'msg'}, `You've added `, el('b',{}, `"${title}"`), ` three times — want it to repeat automatically?`),
+    el('div',{class:'habit-banner-actions'},
+      el('button',{class:'habit-accept-btn', onclick: acceptHabitSuggestion}, 'Make it repeat'),
+      el('button',{onclick: declineHabitSuggestion}, 'Not now')
+    )
+  );
+}
+
+function renderCalendarPlacementControl(){
+  const placement = state.meta.calendarPlacement || 'sidebar';
+  return el('div',{class:'calendar-placement-row'},
+    el('span',{class:'calendar-placement-label'}, '📅 Calendar'),
+    el('select',{class:'calendar-placement-select', onchange:(e)=>{ state.meta.calendarPlacement = e.target.value; saveMeta(); render(); }},
+      [['sidebar','Sidebar'],['top','Top'],['hidden','Off']].map(([v,label])=>
+        el('option',{value:v, ...(placement===v?{selected:'selected'}:{})}, label)
+      )
+    )
+  );
+}
+
+// existing: a loggedPeriods entry being edited, or null for a new entry.
+// defaultStart: optional default start date (e.g. a day picked in the full
+// calendar view), used only when creating a new entry.
+function renderPeriodLogForm(existing, defaultStart){
+  const ongoing = existing ? existing.end===null : false;
+  const startPicker = createDatePicker(existing ? existing.start : (defaultStart || todayStr()));
+  const endPicker = createDatePicker(existing && existing.end ? existing.end : (defaultStart || todayStr()));
+  const ongoingCheckbox = el('input',{type:'checkbox', ...(ongoing?{checked:'checked'}:{})});
+  const endFieldWrap = el('div',{class:'field', style:'position:relative; margin-bottom:10px;'+(ongoing?' display:none;':'')},
+    el('label',{},'End'), endPicker.el);
+  ongoingCheckbox.addEventListener('change',(e)=>{ endFieldWrap.style.display = e.target.checked ? 'none' : ''; });
+
+  return el('div',{class:'period-log-form'},
+    el('div',{class:'field', style:'position:relative; margin-bottom:10px;'}, el('label',{},'Start'), startPicker.el),
+    el('label',{class:'period-ongoing-check'}, ongoingCheckbox, ' Still ongoing'),
+    endFieldWrap,
+    el('div',{style:'display:flex; gap:8px;'},
+      el('button',{class:'period-due-save', onclick: async ()=>{
+        const start = startPicker.getValue();
+        const end = ongoingCheckbox.checked ? null : endPicker.getValue();
+        await saveLoggedPeriod(existing ? existing.id : null, start, end);
+        state.periodLogFormOpen = false;
+        state.periodEditingEntry = null;
+        render();
+      }}, existing ? 'Save changes' : 'Save period'),
+      el('button',{class:'period-form-cancel', onclick:()=>{ state.periodLogFormOpen=false; state.periodEditingEntry=null; render(); }}, 'Cancel')
+    )
+  );
+}
+
+function renderPeriodHistory(){
+  const sorted = [...state.period.loggedPeriods].sort((a,b)=>b.start.localeCompare(a.start));
+  const box = el('div',{class:'period-history'});
+  if(!sorted.length){
+    box.appendChild(el('div',{class:'period-history-empty'}, 'No periods logged yet.'));
+    return box;
+  }
+  sorted.slice(0,6).forEach(p=>{
+    const label = p.end ? `${niceDate(p.start)} – ${niceDate(p.end)}` : `${niceDate(p.start)} – Ongoing`;
+    box.appendChild(el('div',{class:'period-history-row'},
+      el('span',{}, label),
+      el('div',{class:'period-history-actions'},
+        el('button',{onclick:()=>{ state.periodEditingEntry=p; state.periodLogFormOpen=true; render(); }, title:'Edit'}, '✎'),
+        el('button',{onclick:()=>{ if(confirm('Delete this logged period?')){ deleteLoggedPeriod(p.id); } }, title:'Delete'}, '✕')
+      )
+    ));
+  });
+  if(sorted.length>6){ box.appendChild(el('div',{class:'period-history-more'}, `+ ${sorted.length-6} earlier`)); }
+  return box;
+}
+
+function renderBigCalendar(){
+  const offset = state.calendarMonthOffset;
+  const dates = calendarGridDates(offset);
+  const monthName = monthDate(offset).toLocaleDateString('en-US',{month:'long', year:'numeric'});
+  const today = todayStr();
+  const currentMonthIdx = monthDate(offset).getMonth();
+  const mode = state.period.mode;
+  const selectedDs = state.calendarSelectedDate || today;
+
+  const grid = el('div',{class:'calendar-grid big-calendar-grid'});
+  ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].forEach(d=> grid.appendChild(el('div',{class:'calendar-dow'}, d)));
+
+  dates.forEach(d=>{
+    const ds = fmt(d);
+    const inMonth = d.getMonth()===currentMonthIdx;
+    const isToday = ds===today;
+    const isSelected = ds===selectedDs;
+    const periodInfo = mode==='cycle' ? periodDayInfo(ds) : null;
+    const phaseInfo = mode==='cycle' ? cyclePhaseInfo(ds) : null;
+    const pregInfo = mode==='pregnancy' ? pregnancyWeekInfo(ds) : null;
+    const dueTasks = state.tasks.filter(t=>t.dueDate===ds);
+
+    let phaseClass = '';
+    if(phaseInfo && phaseInfo.phase!=='menstrual'){ phaseClass = ' phase-'+phaseInfo.phase; }
+    if(pregInfo){ phaseClass = ' trimester-'+pregInfo.trimester; }
+
+    const cellClass = 'calendar-cell big-calendar-cell'
+      +(inMonth?'':' other-month')+(isToday?' today':'')+(isSelected?' selected':'')
+      +(periodInfo ? ' period-'+periodInfo.status : '')
+      +phaseClass;
+
+    const dotRow = el('div',{class:'calendar-dots'});
+    dueTasks.slice(0,5).forEach(t=> dotRow.appendChild(
+      t.type==='event'
+        ? el('span',{class:'calendar-event-marker', style:`border-bottom-color:${catColor(t.category)}`})
+        : el('span',{class:'calendar-dot', style:`background:${catColor(t.category)}`})
+    ));
+    if(dueTasks.length>5){ dotRow.appendChild(el('span',{class:'calendar-dot-more'}, '+'+(dueTasks.length-5))); }
+
+    grid.appendChild(el('div',{
+      class: cellClass,
+      onclick: ()=>{ state.calendarSelectedDate = ds; render(); }
+    },
+      el('div',{class:'calendar-daynum'}, String(d.getDate())),
+      dotRow
+    ));
+  });
+
+  return el('div',{class:'calendar-widget big-calendar-widget'},
+    el('div',{class:'calendar-header'},
+      el('button',{onclick:()=>{state.calendarMonthOffset--; render();}}, '‹'),
+      el('div',{class:'calendar-month-label'}, monthName),
+      el('button',{onclick:()=>{state.calendarMonthOffset++; render();}}, '›')
+    ),
+    grid
+  );
+}
+
+function renderCalendarSidePanel(){
+  const ds = state.calendarSelectedDate || todayStr();
+  const label = parseDate(ds).toLocaleDateString('en-US',{weekday:'long', month:'long', day:'numeric', year:'numeric'});
+  const panel = el('div',{class:'calendar-side-panel'});
+  panel.appendChild(el('div',{class:'calendar-side-heading'}, label));
+
+  const mode = state.period.mode;
+  if(state.period.enabled && mode==='cycle'){
+    const periodInfo = periodDayInfo(ds);
+    const phaseInfo = cyclePhaseInfo(ds);
+    let statusText = null;
+    if(periodInfo){ statusText = periodInfo.status==='confirmed' ? '🩸 Period (confirmed)' : '🩸 Period (predicted)'; }
+    else if(phaseInfo){ statusText = phaseInfo.phase.charAt(0).toUpperCase()+phaseInfo.phase.slice(1)+' phase (estimated)'; }
+    if(statusText){ panel.appendChild(el('div',{class:'calendar-side-status'}, statusText)); }
+
+    if(!state.periodLogFormOpen){
+      panel.appendChild(el('button',{class:'period-secondary-btn', onclick:()=>{ state.periodEditingEntry=null; state.periodLogFormOpen=true; render(); }}, '🩸 Log period starting this day'));
+    } else {
+      panel.appendChild(renderPeriodLogForm(state.periodEditingEntry, ds));
+    }
+  } else if(state.period.enabled && mode==='pregnancy'){
+    const pregInfo = pregnancyWeekInfo(ds);
+    if(pregInfo){ panel.appendChild(el('div',{class:'calendar-side-status'}, `Week ${pregInfo.week} · Trimester ${pregInfo.trimester}`)); }
+  }
+
+  panel.appendChild(el('div',{class:'calendar-side-tasks-title'}, 'Tasks'));
+  const dayTasks = state.tasks.filter(t=>t.dueDate===ds);
+  if(!dayTasks.length){
+    panel.appendChild(el('div',{class:'empty'}, 'Nothing due this day.'));
+  } else {
+    dayTasks.forEach(t=>panel.appendChild(renderTask(t)));
+  }
+
+  return panel;
+}
+
+function renderCalendarTabView(){
+  return el('div',{class:'big-calendar-layout'},
+    renderBigCalendar(),
+    renderCalendarSidePanel()
+  );
+}
+
+function renderCalendarWidget(){
+  const offset = state.calendarMonthOffset;
+  const dates = calendarGridDates(offset);
+  const monthName = monthDate(offset).toLocaleDateString('en-US',{month:'short', year:'numeric'});
+  const today = todayStr();
+  const currentMonthIdx = monthDate(offset).getMonth();
+  const editMode = state.periodEditMode;
+  const mode = state.period.mode;
+
+  const grid = el('div',{class:'calendar-grid'});
+  ['M','T','W','T','F','S','S'].forEach(d=> grid.appendChild(el('div',{class:'calendar-dow'}, d)));
+
+  dates.forEach(d=>{
+    const ds = fmt(d);
+    const inMonth = d.getMonth()===currentMonthIdx;
+    const isToday = ds===today;
+    const isSelected = ds===state.calendarSelectedDate;
+    const periodInfo = mode==='cycle' ? periodDayInfo(ds) : null;
+    const phaseInfo = mode==='cycle' ? cyclePhaseInfo(ds) : null;
+    const pregInfo = mode==='pregnancy' ? pregnancyWeekInfo(ds) : null;
+    const dueTasks = state.tasks.filter(t=>t.dueDate===ds);
+    const dotRow = el('div',{class:'calendar-dots'});
+    dueTasks.slice(0,3).forEach(t=> dotRow.appendChild(
+      t.type==='event'
+        ? el('span',{class:'calendar-event-marker', style:`border-bottom-color:${catColor(t.category)}`})
+        : el('span',{class:'calendar-dot', style:`background:${catColor(t.category)}`})
+    ));
+    if(dueTasks.length>3){ dotRow.appendChild(el('span',{class:'calendar-dot-more'}, '+'+(dueTasks.length-3))); }
+
+    let tooltip = null;
+    let phaseClass = '';
+    if(periodInfo){ tooltip = periodInfo.status==='confirmed' ? 'Period (confirmed)' : 'Period (predicted)'; }
+    else if(phaseInfo && phaseInfo.phase!=='menstrual'){
+      phaseClass = ' phase-'+phaseInfo.phase;
+      tooltip = phaseInfo.phase.charAt(0).toUpperCase()+phaseInfo.phase.slice(1)+' (estimated)';
+    }
+    if(pregInfo){ phaseClass = ' trimester-'+pregInfo.trimester; tooltip = `Week ${pregInfo.week} · Trimester ${pregInfo.trimester}`; }
+
+    const cellClass = 'calendar-cell'
+      +(inMonth?'':' other-month')+(isToday?' today':'')+(isSelected?' selected':'')
+      +(periodInfo ? ' period-'+periodInfo.status : '')
+      +phaseClass;
+
+    grid.appendChild(el('div',{
+      class: cellClass,
+      ...(tooltip ? {title: tooltip} : {}),
+      onclick: ()=>{ state.calendarSelectedDate = isSelected ? null : ds; render(); }
+    },
+      el('div',{class:'calendar-daynum'}, String(d.getDate())),
+      dotRow
+    ));
+  });
+
+  const periodToggleBtn = el('button',{
+    class:'period-toggle-btn'+(editMode?' active':''),
+    title: editMode ? 'Done adjusting' : 'Track period / pregnancy',
+    onclick:()=>{ state.periodEditMode = !state.periodEditMode; render(); }
+  }, '🩸');
+
+  const widget = el('div',{class:'calendar-widget'},
+    el('div',{class:'calendar-header'},
+      el('button',{onclick:()=>{state.calendarMonthOffset--; render();}}, '‹'),
+      el('div',{class:'calendar-month-label'}, monthName),
+      el('div',{class:'calendar-header-right'},
+        state.period.enabled ? periodToggleBtn : null,
+        el('button',{onclick:()=>{state.calendarMonthOffset++; render();}}, '›')
+      )
+    ),
+    grid
+  );
+
+  // A quick "where am I right now" readout, shown whenever there's enough
+  // data to compute one — not just in edit mode.
+  if(mode==='cycle'){
+    const todayPhase = cyclePhaseInfo(today);
+    if(todayPhase){
+      widget.appendChild(el('div',{class:'cycle-readout'}, `Today: ${todayPhase.phase.charAt(0).toUpperCase()+todayPhase.phase.slice(1)} phase (estimated)`));
+    }
+  } else if(mode==='pregnancy' && state.period.pregnancy.dueDate){
+    const todayPreg = pregnancyWeekInfo(today);
+    const dueLabel = niceDateLong(state.period.pregnancy.dueDate);
+    widget.appendChild(el('div',{class:'cycle-readout'},
+      todayPreg ? `Week ${todayPreg.week} · Trimester ${todayPreg.trimester} · Due ${dueLabel}` : `Due ${dueLabel}`
+    ));
+  }
+
+  if(editMode){
+    const modeSwitch = el('div',{class:'period-mode-switch'},
+      el('button',{class: mode==='cycle'?'active':'', onclick:()=>{ state.period.mode='cycle'; savePeriod(); render(); }}, 'Cycle tracking'),
+      el('button',{class: mode==='pregnancy'?'active':'', onclick:()=>{ state.period.mode='pregnancy'; savePeriod(); render(); }}, 'Pregnancy')
+    );
+
+    const panel = el('div',{class:'period-edit-panel'}, modeSwitch);
+
+    if(mode==='cycle'){
+      const ongoing = currentOngoingPeriod();
+      panel.appendChild(el('button',{class:'period-primary-btn', onclick: ongoing ? endPeriodToday : startPeriodToday},
+        ongoing ? '🩸 End period today' : '🩸 I started my period today'
+      ));
+
+      if(!state.periodLogFormOpen){
+        panel.appendChild(el('button',{class:'period-secondary-btn', onclick:()=>{ state.periodEditingEntry=null; state.periodLogFormOpen=true; render(); }}, '+ Log a different date range'));
+      } else {
+        panel.appendChild(renderPeriodLogForm(state.periodEditingEntry));
+      }
+
+      panel.appendChild(el('div',{class:'period-edit-hint', style:'margin-top:12px;'}, 'History'));
+      panel.appendChild(renderPeriodHistory());
+
+      panel.appendChild(el('div',{class:'period-settings-row', style:'margin-top:12px;'},
+        el('label',{}, 'Cycle length',
+          el('input',{type:'number', min:'15', max:'60', value:String(state.period.cycleLength),
+            onchange:(e)=>{ state.period.cycleLength = Math.max(15, Math.min(60, parseInt(e.target.value)||28)); savePeriod(); render(); }
+          })
+        ),
+        el('label',{}, 'Typical length',
+          el('input',{type:'number', min:'1', max:'14', value:String(state.period.periodLength),
+            onchange:(e)=>{ state.period.periodLength = Math.max(1, Math.min(14, parseInt(e.target.value)||5)); savePeriod(); render(); }
+          })
+        )
+      ));
+      panel.appendChild(el('div',{class:'phase-legend'},
+        el('span',{}, el('i',{class:'phase-swatch', style:'background:var(--danger)'}), 'Period'),
+        el('span',{}, el('i',{class:'phase-swatch', style:'background:var(--phase-follicular)'}), 'Follicular'),
+        el('span',{}, el('i',{class:'phase-swatch', style:'background:var(--phase-ovulation)'}), 'Ovulation'),
+        el('span',{}, el('i',{class:'phase-swatch', style:'background:var(--phase-luteal)'}), 'Luteal')
+      ));
+    } else {
+      panel.appendChild(el('div',{class:'period-edit-hint'}, 'Set your due date — the calendar will map out trimesters automatically.'));
+      const duePicker = createDatePicker(state.period.pregnancy.dueDate || todayStr());
+      panel.appendChild(el('div',{class:'field', style:'position:relative; margin-bottom:10px;'}, duePicker.el));
+      panel.appendChild(el('button',{class:'period-due-save', onclick:()=>{ state.period.pregnancy.dueDate = duePicker.getValue(); savePeriod(); render(); }}, 'Save due date'));
+
+      const weeksInput = el('input',{type:'number', min:'1', max:'42', placeholder:'e.g. 20', class:'pregnancy-weeks-input'});
+      panel.appendChild(el('div',{class:'pregnancy-weeks-row'},
+        el('span',{}, 'Or, how many weeks along are you?'),
+        weeksInput,
+        el('button',{onclick:()=>{
+          const weeks = parseInt(weeksInput.value);
+          if(!weeks || weeks<1 || weeks>42) return;
+          state.period.pregnancy.dueDate = weeksAlongToDueDate(weeks);
+          savePeriod(); render();
+        }}, 'Set')
+      ));
+
+      panel.appendChild(el('div',{class:'phase-legend'},
+        el('span',{}, el('i',{class:'phase-swatch', style:'background:var(--trimester-1)'}), 'Trimester 1'),
+        el('span',{}, el('i',{class:'phase-swatch', style:'background:var(--trimester-2)'}), 'Trimester 2'),
+        el('span',{}, el('i',{class:'phase-swatch', style:'background:var(--trimester-3)'}), 'Trimester 3')
+      ));
+
+      if(!state.returnToCycleFormOpen){
+        panel.appendChild(el('button',{class:'period-return-btn', onclick:()=>{ state.returnToCycleFormOpen=true; render(); }}, '↺ Return to cycle tracking'));
+      } else {
+        const returnPicker = createDatePicker(todayStr());
+        panel.appendChild(el('div',{class:'period-return-form'},
+          el('div',{class:'period-edit-hint'}, "When did your period come back? We'll use that to re-anchor predictions, rather than assuming your old cycle just picks up where it left off."),
+          el('div',{class:'field', style:'position:relative; margin-bottom:10px;'}, returnPicker.el),
+          el('div',{style:'display:flex; gap:8px;'},
+            el('button',{class:'period-due-save', onclick:()=>{ state.returnToCycleFormOpen=false; returnToCycleTracking(returnPicker.getValue()); }}, 'Confirm'),
+            el('button',{class:'period-form-cancel', onclick:()=>{ state.returnToCycleFormOpen=false; render(); }}, 'Cancel')
+          )
+        ));
+      }
+    }
+
+    widget.appendChild(panel);
+  }
+
+  return widget;
+}
+
+function renderDashboardStrip(){
+  const stats = computeStats();
+  const lvl = levelInfo();
+  const hour = new Date().getHours();
+  const greeting = hour<5?'Still up':hour<12?'Good morning':hour<17?'Good afternoon':'Good evening';
+  const today = todayStr();
+  const todayLeft = state.tasks.filter(t=>t.type!=='event' && t.dueDate===today && !t.completed).length;
+  const thisWk = stats.weeks[stats.weeks.length-1];
+  const weekText = (thisWk && thisWk.hasData) ? `${thisWk.rate}% done this week` : `${stats.completionRate}% all-time`;
+
+  return el('div',{class:'dashboard-strip'},
+    el('div',{class:'dashboard-greeting'},
+      `${greeting} — `, el('b',{}, String(todayLeft)), ` task${todayLeft===1?'':'s'} left today · `, el('b',{}, weekText)
+    ),
+    el('div',{class:'dashboard-chips'},
+      el('span',{class:'stat-chip'}, '⚡ Lv '+lvl.level),
+      stats.streak>0 ? el('span',{class:'stat-chip'}, '🔥 '+stats.streak+'d') : null,
+      el('span',{class:'stat-chip'}, '✔ '+stats.completedCount+' closed')
+    )
+  );
+}
+
+function submitQuickAdd(){
+  const input = document.getElementById('quickadd-input');
+  if(!input) return;
+  const title = input.value.trim();
+  if(!title) return;
+  addTask({ title, category: state.categories[0] || 'Work', dueDate: todayStr(), notes:'', recurrence:'none' });
+}
+
+function takePrefill(){ const v = state.prefillTitle || ''; state.prefillTitle = ''; return v; }
+
+// Opens the full task form (every field), carrying over any title already typed in the quick-add box.
+function openFullTaskForm(){
+  const input = document.getElementById('quickadd-input');
+  state.prefillTitle = input ? input.value.trim() : '';
+  state.editingTask = null;
+  state.modalOpen = true;
+  render();
+}
+
+function renderQuickAddBar(){
+  return el('div',{class:'quickadd-row'},
+    el('span',{class:'quickadd-icon'}, '+'),
+    el('input',{id:'quickadd-input', type:'text', placeholder:'Type a title: Enter adds it now, or click + New Task for all options…',
+      onkeydown:(e)=>{ if(e.key==='Enter'){ submitQuickAdd(); } }
+    }),
+    el('button',{class:'quickadd-btn', title:'Open the full form: category, due date, time, repeat, reminder, priority, subtasks', onclick: openFullTaskForm}, '+ New Task'),
+    el('button',{class:'quickadd-full-btn', title:'Add instantly with default settings (same as pressing Enter)', onclick: submitQuickAdd}, 'Add now')
+  );
+}
+
+function renderPriorityPanel(){
+  const today = todayStr();
+  // Tasks due today already show (starred) in the Today panel right below —
+  // this panel is specifically for priority items NOT due today, so they
+  // stay visible well before their date arrives instead of appearing only
+  // once it's suddenly urgent.
+  const items = state.tasks
+    .filter(t=> t.priority && !t.completed && t.dueDate!==today)
+    .sort((a,b)=> a.dueDate.localeCompare(b.dueDate));
+  if(!items.length) return null;
+
+  const panel = el('div',{class:'priority-panel'});
+  panel.appendChild(el('div',{class:'priority-panel-header'},
+    el('div',{class:'priority-panel-title'}, '★ Priority'),
+    el('div',{class:'priority-panel-count'}, `${items.length} not due today`)
+  ));
+  items.forEach(t=> panel.appendChild(renderTask(t)));
+  return panel;
+}
+
+function renderTodayPanel(){
+  const today = todayStr();
+  const todays = state.tasks.filter(t=>t.dueDate===today).sort((a,b)=>
+    (a.completed?1:0)-(b.completed?1:0) || (a.time||'99:99').localeCompare(b.time||'99:99') || a.title.localeCompare(b.title)
+  );
+  const realCount = todays.filter(t=>t.type!=='event').length;
+  const doneCount = todays.filter(t=>t.type!=='event' && t.completed).length;
+
+  const panel = el('div',{class:'today-panel'});
+  panel.appendChild(el('div',{class:'today-panel-header'},
+    el('div',{class:'today-panel-title'}, "Today's Focus"),
+    realCount ? el('div',{class:'today-panel-count'}, `${doneCount}/${realCount} done`) : null
+  ));
+  if(!todays.length){
+    panel.appendChild(el('div',{class:'today-panel-empty'}, 'Nothing due today — quick-add something above, or enjoy the clear day. ✨'));
+  } else {
+    todays.forEach(t=> panel.appendChild(renderTask(t)));
+  }
+  return panel;
+}
+
+function renderCategoryProgress(){
+  const box = el('div',{class:'cat-progress-box'});
+  box.appendChild(el('div',{class:'cat-progress-title'}, 'This Week by Category'));
+  state.categories.forEach(cat=>{
+    const tasks = state.tasks.filter(t=>t.type!=='event' && t.category===cat && isInWeek(t.dueDate,0));
+    const done = tasks.filter(t=>t.completed).length;
+    const pct = tasks.length ? Math.round(done/tasks.length*100) : 0;
+    box.appendChild(el('div',{class:'cat-progress-row'},
+      el('div',{class:'cat-progress-label'},
+        el('span',{class:'cat-swatch', style:`background:${catColor(cat)}`}), cat,
+        el('span',{class:'cat-progress-pct'}, tasks.length ? pct+'%' : '—')
+      ),
+      el('div',{class:'cat-progress-bar-bg'}, el('div',{class:'cat-progress-bar-fill', style:`width:${pct}%; background:${catColor(cat)}`}))
+    ));
+  });
+  return box;
+}
+
+function renderWeekView(){
+  const placement = state.meta.calendarPlacement || 'sidebar';
+  const wrap = el('div',{});
+  if(placement==='top'){
+    wrap.appendChild(renderCalendarWidget());
+  }
+  wrap.appendChild(renderDashboardStrip());
+  wrap.appendChild(renderQuickAddBar());
+  const priorityPanel = renderPriorityPanel();
+  if(priorityPanel){ wrap.appendChild(priorityPanel); }
+  wrap.appendChild(renderTodayPanel());
+  const layout = el('div',{class:'layout'});
+  layout.appendChild(renderSidebar());
+  layout.appendChild(renderMain());
+  wrap.appendChild(layout);
+  return wrap;
+}
+
+function renderSidebar(){
+  const sb = el('div',{class:'sidebar'});
+  const placement = state.meta.calendarPlacement || 'sidebar';
+
+  sb.appendChild(renderCalendarPlacementControl());
+  if(placement==='sidebar'){ sb.appendChild(renderCalendarWidget()); }
+
+  sb.appendChild(el('div',{class:'week-nav'},
+    el('button',{onclick:()=>{state.weekOffset--; state.calendarSelectedDate=null; render();}}, '‹'),
+    el('div',{class:'label'}, weekLabel(state.weekOffset)),
+    el('button',{onclick:()=>{state.weekOffset++; state.calendarSelectedDate=null; render();}}, '›')
+  ));
+
+  const catList = el('div',{class:'cat-list'});
+  const allCount = state.tasks.filter(t=>isInWeek(t.dueDate,state.weekOffset) || isOverdue(t)).length;
+  catList.appendChild(el('div',{class:'cat-item'+(state.activeCategory==='all'?' active':''), onclick:()=>{state.activeCategory='all'; render();}},
+    el('span',{}, el('span',{class:'cat-swatch', style:'background:var(--text-faint)'}), 'All'),
+    el('span',{class:'count'}, String(allCount))
+  ));
+  state.categories.forEach(cat=>{
+    const count = state.tasks.filter(t=>t.category===cat && (isInWeek(t.dueDate,state.weekOffset) || isOverdue(t))).length;
+    catList.appendChild(el('div',{class:'cat-item'+(state.activeCategory===cat?' active':''), onclick:()=>{state.activeCategory=cat; render();}},
+      el('span',{}, el('span',{class:'cat-swatch', style:`background:${catColor(cat)}`}), cat),
+      el('span',{class:'count'}, String(count))
+    ));
+  });
+  sb.appendChild(catList);
+
+  const catInput = el('input',{type:'text', placeholder:'New category…'});
+  sb.appendChild(el('div',{class:'add-cat'},
+    catInput,
+    el('button',{onclick:()=>{ addCategory(catInput.value); }}, '+')
+  ));
+
+  sb.appendChild(el('button',{class:'new-task-btn', onclick:()=>{ state.editingTask=null; state.modalOpen=true; render(); }}, '+ New Task'));
+
+  sb.appendChild(renderCategoryProgress());
+
+  return sb;
+}
+
+function renderMain(){
+  const main = el('main',{class:'content'});
+
+  if(state.calendarSelectedDate){
+    const ds = state.calendarSelectedDate;
+    let dayTasks = state.tasks.filter(t=>t.dueDate===ds);
+    if(state.activeCategory !== 'all') dayTasks = dayTasks.filter(t=>t.category===state.activeCategory);
+    const label = ds===todayStr() ? 'Today' : parseDate(ds).toLocaleDateString('en-US',{weekday:'long', month:'short', day:'numeric'});
+    main.appendChild(el('div',{class:'section-title'},
+      `${label} · ${dayTasks.length} task${dayTasks.length===1?'':'s'}`,
+      el('button',{class:'calendar-clear-inline', onclick:()=>{ state.calendarSelectedDate=null; render(); }}, '✕ Clear')
+    ));
+    if(!dayTasks.length){
+      main.appendChild(el('div',{class:'empty'}, 'Nothing due ', el('b',{},label), '.'));
+      return main;
+    }
+    dayTasks.sort((a,b)=>a.title.localeCompare(b.title)).forEach(t=>main.appendChild(renderTask(t)));
+    return main;
+  }
+
+  let tasks = state.tasks.filter(t=> isInWeek(t.dueDate, state.weekOffset) || (state.weekOffset===0 && isOverdue(t)));
+  if(state.activeCategory !== 'all') tasks = tasks.filter(t=>t.category===state.activeCategory);
+
+  if(!state.tasks.length){
+    main.appendChild(el('div',{class:'empty'}, el('div',{}, el('b',{},'No tasks yet.'), ' Click “+ New Task” to plan your week.')));
+    return main;
+  }
+
+  const overdue = tasks.filter(isOverdue).sort((a,b)=>a.dueDate.localeCompare(b.dueDate));
+  if(overdue.length){
+    main.appendChild(el('div',{class:'section-title overdue'}, `⚠ Overdue — ${overdue.length}`));
+    overdue.forEach(t=>main.appendChild(renderTask(t)));
+  }
+
+  const grouped = {};
+  tasks.filter(t=>!isOverdue(t)).forEach(t=>{ (grouped[t.category] = grouped[t.category]||[]).push(t); });
+
+  const cats = Object.keys(grouped).sort((a,b)=> state.categories.indexOf(a)-state.categories.indexOf(b));
+  if(!cats.length && !overdue.length){
+    main.appendChild(el('div',{class:'empty'}, 'Nothing scheduled ', el('b',{},'for this week'), ' in this view.'));
+    return main;
+  }
+  cats.forEach(cat=>{
+    const items = grouped[cat].sort((a,b)=>a.dueDate.localeCompare(b.dueDate));
+    const group = el('div',{class:'group'});
+    group.appendChild(el('div',{class:'group-head'},
+      el('span',{class:'cat-swatch', style:`background:${catColor(cat)}`}),
+      el('span',{class:'name'}, cat),
+      el('span',{class:'n'}, `${items.filter(i=>i.completed).length}/${items.length}`)
+    ));
+    items.forEach(t=>group.appendChild(renderTask(t)));
+    main.appendChild(group);
+  });
+  return main;
+}
+
+function formatTime12h(timeStr){
+  if(!timeStr) return '';
+  const [h,m] = timeStr.split(':').map(Number);
+  const period = h>=12 ? 'PM' : 'AM';
+  const h12 = h%12===0 ? 12 : h%12;
+  return `${h12}:${String(m).padStart(2,'0')} ${period}`;
+}
+
+function formatTimeRange(t){
+  if(!t.time) return '';
+  if(!t.endTime) return formatTime12h(t.time);
+  const s = formatTime12h(t.time), e = formatTime12h(t.endTime);
+  return (s.slice(-2) === e.slice(-2) ? s.slice(0,-3) : s) + '–' + e;
+}
+
+function renderTask(t){
+  const isEvent = t.type==='event';
+  const overdue = isOverdue(t);
+  const justToggled = t.id === state.lastToggledId;
+  const dateLabel = parseDate(t.dueDate).toLocaleDateString('en-US',{month:'short',day:'numeric'}) + (isEvent && t.time ? ' · '+formatTimeRange(t) : '');
+  const hasSubtasks = !isEvent && t.subtasks && t.subtasks.length>0;
+  const subtaskDoneCount = hasSubtasks ? t.subtasks.filter(s=>s.completed).length : 0;
+  const isExpanded = state.expandedSubtaskIds.includes(t.id);
+
+  const marker = isEvent
+    ? el('div',{class:'event-marker', title:'Event — not something to check off'}, '📌')
+    : el('div',{class:'checkbox'+(t.completed?' checked':'')+(justToggled?' pop':''), onclick:()=>toggleTask(t.id)}, t.completed?'✓':'');
+
+  const taskEl = el('div',{class:'task'+(overdue?' overdue':'')+(t.completed?' done':'')+(justToggled?' pop':'')+(t.priority?' priority':'')+(isEvent?' event-row':'')},
+    marker,
+    el('div',{class:'task-body'},
+      el('div',{class:'title-row'},
+        t.priority ? el('span',{class:'priority-star', title:'High priority'}, '★') : null,
+        el('div',{class:'title'}, t.title)
+      ),
+      el('div',{class:'meta'},
+        el('span',{class:'badge '+(isEvent?'event':(overdue?'overdue':'due'))}, (isEvent?'':(overdue?'Overdue · ':'Due '))+dateLabel),
+        el('span',{class:'badge cat'}, t.category),
+        (t.recurrence && t.recurrence!=='none') ? el('span',{class:'badge recur'}, '↻ '+RECUR_LABEL[t.recurrence]) : null,
+        (t.remindTime && !t.completed) ? el('span',{class:'badge cat', title:'Reminder set'}, '🔔 '+formatTime12h(t.remindTime)) : null,
+        hasSubtasks ? el('button',{class:'badge subtask-toggle', onclick:()=>toggleSubtaskExpanded(t.id)}, (isExpanded?'▾ ':'▸ ')+subtaskDoneCount+'/'+t.subtasks.length) : null
+      ),
+      t.notes ? el('div',{class:'notes'}, t.notes) : null,
+      (hasSubtasks && isExpanded) ? el('div',{class:'subtask-list'},
+        ...t.subtasks.map(s=> el('div',{class:'subtask-row'+(s.completed?' done':'')},
+          el('span',{class:'subtask-checkbox'+(s.completed?' checked':''), onclick:()=>toggleSubtask(t.id, s.id)}, s.completed?'✓':''),
+          el('span',{class:'subtask-title'}, s.title)
+        ))
+      ) : null
+    ),
+    el('div',{class:'task-actions'},
+      el('button',{onclick:()=>{ duplicateTask(t.id); }, title:'Duplicate'}, '⧉'),
+      el('button',{onclick:()=>{ state.editingTask=t; state.modalOpen=true; render(); }, title:'Edit'}, '✎'),
+      el('button',{onclick:()=>{ if(confirm('Delete this task?')) deleteTask(t.id); }, title:'Delete'}, '✕')
+    )
+  );
+  return taskEl;
+}
+
+function renderProjectedTask(t){
+  const dateLabel = niceDate(t.dueDate);
+  return el('div',{class:'task projected'},
+    el('div',{class:'projected-icon'}, '↻'),
+    el('div',{class:'task-body'},
+      el('div',{class:'title'}, t.title),
+      el('div',{class:'meta'},
+        el('span',{class:'badge due'}, 'Projected '+dateLabel),
+        el('span',{class:'badge cat'}, t.category),
+        el('span',{class:'badge recur'}, '↻ '+RECUR_LABEL[t.recurrence])
+      )
+    )
+  );
+}
+
+function renderSearchView(){
+  const q = state.searchQuery.trim().toLowerCase();
+  const wrap = el('div',{});
+  const matches = state.tasks.filter(t=>
+    t.title.toLowerCase().includes(q) ||
+    (t.notes && t.notes.toLowerCase().includes(q)) ||
+    t.category.toLowerCase().includes(q)
+  ).sort((a,b)=>a.dueDate.localeCompare(b.dueDate));
+
+  wrap.appendChild(el('div',{class:'section-title'}, `Search — “${state.searchQuery.trim()}” · ${matches.length} match${matches.length===1?'':'es'}`));
+  if(!matches.length){
+    wrap.appendChild(el('div',{class:'empty'}, 'No tasks match ', el('b',{},`"${state.searchQuery.trim()}"`), '.'));
+    return wrap;
+  }
+  matches.forEach(t=>wrap.appendChild(renderTask(t)));
+  return wrap;
+}
+
+function renderAllTasksView(){
+  const wrap = el('div',{});
+  if(!state.tasks.length){
+    wrap.appendChild(el('div',{class:'empty'}, el('div',{}, el('b',{},'No tasks yet.'), ' Click “+ New Task” to plan your week.')));
+    return wrap;
+  }
+
+  const chipRow = el('div',{class:'chip-row'});
+  const allCount = state.tasks.length;
+  chipRow.appendChild(el('div',{class:'chip'+(state.allTasksCategory==='all'?' active':''), onclick:()=>{state.allTasksCategory='all'; render();}},
+    'All', el('span',{class:'count'}, String(allCount))
+  ));
+  state.categories.forEach(cat=>{
+    const count = state.tasks.filter(t=>t.category===cat).length;
+    chipRow.appendChild(el('div',{class:'chip'+(state.allTasksCategory===cat?' active':''), onclick:()=>{state.allTasksCategory=cat; render();}},
+      el('span',{class:'cat-swatch', style:`background:${catColor(cat)}`}), cat, el('span',{class:'count'}, String(count))
+    ));
+  });
+  wrap.appendChild(chipRow);
+
+  const filtered = state.allTasksCategory==='all' ? state.tasks : state.tasks.filter(t=>t.category===state.allTasksCategory);
+  const sorted = filtered.slice().sort((a,b)=> a.dueDate.localeCompare(b.dueDate) || a.title.localeCompare(b.title));
+  wrap.appendChild(el('div',{class:'section-title'}, `All Tasks — chronological · ${sorted.length}${state.allTasksCategory==='all'?' total':' in '+state.allTasksCategory}`));
+  if(!sorted.length){
+    wrap.appendChild(el('div',{class:'empty'}, 'No tasks in ', el('b',{},state.allTasksCategory), '.'));
+    return wrap;
+  }
+  let lastMonth = null;
+  sorted.forEach(t=>{
+    const d = parseDate(t.dueDate);
+    const monthKey = d.toLocaleDateString('en-US',{month:'long', year:'numeric'});
+    if(monthKey !== lastMonth){
+      wrap.appendChild(el('div',{class:'group-head'}, el('span',{class:'name'}, monthKey)));
+      lastMonth = monthKey;
+    }
+    wrap.appendChild(renderTask(t));
+  });
+  return wrap;
+}
+
+function renderCompletedView(){
+  const wrap = el('div',{});
+  wrap.appendChild(el('div',{class:'week-nav', style:'max-width:260px; margin-bottom:16px; background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:10px 14px;'},
+    el('button',{onclick:()=>{state.monthOffset--; render();}}, '‹'),
+    el('div',{class:'label'}, monthLabel(state.monthOffset)),
+    el('button',{onclick:()=>{state.monthOffset++; render();}}, '›')
+  ));
+
+  const completed = state.tasks.filter(t=>t.completed && t.completedAt && isInMonth(t.completedAt, state.monthOffset))
+    .sort((a,b)=> a.completedAt.localeCompare(b.completedAt));
+
+  wrap.appendChild(el('div',{class:'section-title'}, `Completed in ${monthLabel(state.monthOffset)} · ${completed.length}`));
+
+  if(!completed.length){
+    wrap.appendChild(el('div',{class:'empty'}, 'Nothing completed ', el('b',{},'this month'), ' yet.'));
+    return wrap;
+  }
+  completed.forEach(t=>{
+    const doneLabel = parseDate(t.completedAt).toLocaleDateString('en-US',{weekday:'short', month:'short', day:'numeric'});
+    wrap.appendChild(renderCompletedTask(t, doneLabel)); return;
+    wrap.appendChild(el('div',{class:'task done'},
+      el('div',{class:'checkbox checked'}, '✓'),
+      el('div',{class:'task-body'},
+        el('div',{class:'title'}, t.title),
+        el('div',{class:'meta'},
+          el('span',{class:'badge due'}, 'Completed '+doneLabel),
+          el('span',{class:'badge cat'}, t.category)
+        ),
+        t.notes ? el('div',{class:'notes'}, t.notes) : null
+      )
+    ));
+  });
+  return wrap;
+}
+
+// Completed rows get the same controls as any other task: reopen, edit, delete.
+function renderCompletedTask(t, doneLabel){
+  return el('div',{class:'task done'},
+    el('div',{class:'checkbox checked', title:'Reopen this task', onclick:()=>toggleTask(t.id)}, '✓'),
+    el('div',{class:'task-body'},
+      el('div',{class:'title'}, t.title),
+      el('div',{class:'meta'},
+        el('span',{class:'badge due'}, 'Completed '+doneLabel),
+        el('span',{class:'badge cat'}, t.category),
+        (t.recurrence && t.recurrence!=='none') ? el('span',{class:'badge recur'}, '↻ '+RECUR_LABEL[t.recurrence]) : null
+      ),
+      t.notes ? el('div',{class:'notes'}, t.notes) : null
+    ),
+    el('div',{class:'task-actions'},
+      el('button',{onclick:()=>{ toggleTask(t.id); }, title:'Reopen: mark as not done'}, '↩'),
+      el('button',{onclick:()=>{ state.editingTask=t; state.modalOpen=true; render(); }, title:'Edit'}, '✎'),
+      el('button',{onclick:()=>{ if(confirm('Delete this task?')) deleteTask(t.id); }, title:'Delete'}, '✕')
+    )
+  );
+}
+
+function renderUpcomingView(){
+  const wrap = el('div',{});
+  const items = getUpcomingTasks(30);
+
+  wrap.appendChild(el('div',{class:'section-title'}, `Upcoming — next 30 days · ${items.length} scheduled`));
+
+  if(!items.length){
+    wrap.appendChild(el('div',{class:'empty'}, 'Nothing due ', el('b',{},'in the next 30 days'), '. Add a task or set one to repeat.'));
+    return wrap;
+  }
+
+  let lastDate = null;
+  items.forEach(t=>{
+    if(t.dueDate !== lastDate){
+      const label = t.dueDate===todayStr() ? 'Today' : parseDate(t.dueDate).toLocaleDateString('en-US',{weekday:'long', month:'short', day:'numeric'});
+      wrap.appendChild(el('div',{class:'group-head'}, el('span',{class:'name'}, label)));
+      lastDate = t.dueDate;
+    }
+    wrap.appendChild(renderTask(t));
+  });
+  return wrap;
+}
+
+function niceDateLong(dateStr){
+  return parseDate(dateStr).toLocaleDateString('en-US',{weekday:'short', month:'short', day:'numeric', year:'numeric'});
+}
+
+// Self-contained date picker: a button showing the chosen date that opens a
+// themed calendar dropdown. Built as a standalone factory (not routed through
+// the app's global render()) so it behaves like the modal's other plain
+// inputs — no risk of it being torn down and losing state mid-interaction.
+function createDatePicker(initialDateStr){
+  let selectedDate = initialDateStr;
+  let pickerOffset = 0;
+  const sel = parseDate(selectedDate);
+  const now = new Date();
+  pickerOffset = (sel.getFullYear()-now.getFullYear())*12 + (sel.getMonth()-now.getMonth());
+
+  const displayBtn = el('button',{type:'button', class:'date-field-btn'},
+    el('span',{}, niceDateLong(selectedDate)),
+    el('span',{class:'date-field-icon'}, '📅')
+  );
+  const popover = el('div',{class:'date-popover hidden'});
+  const wrapper = el('div',{class:'date-field-wrap'}, displayBtn, popover);
+
+  function outsideClickHandler(e){ if(!wrapper.contains(e.target)){ closePopover(); } }
+  function openPopover(){ renderPopover(); popover.classList.remove('hidden'); setTimeout(()=>document.addEventListener('click', outsideClickHandler), 0); }
+  function closePopover(){ popover.classList.add('hidden'); document.removeEventListener('click', outsideClickHandler); }
+
+  function renderPopover(){
+    popover.innerHTML = '';
+    const dates = calendarGridDates(pickerOffset);
+    const monthName = monthDate(pickerOffset).toLocaleDateString('en-US',{month:'long', year:'numeric'});
+    const currentMonthIdx = monthDate(pickerOffset).getMonth();
+
+    popover.appendChild(el('div',{class:'date-popover-header'},
+      el('button',{type:'button', onclick:(e)=>{ e.stopPropagation(); pickerOffset--; renderPopover(); }}, '‹'),
+      el('div',{class:'date-popover-month'}, monthName),
+      el('button',{type:'button', onclick:(e)=>{ e.stopPropagation(); pickerOffset++; renderPopover(); }}, '›')
+    ));
+
+    const grid = el('div',{class:'date-popover-grid'});
+    ['M','T','W','T','F','S','S'].forEach(d=>grid.appendChild(el('div',{class:'date-popover-dow'}, d)));
+    dates.forEach(d=>{
+      const ds = fmt(d);
+      const inMonth = d.getMonth()===currentMonthIdx;
+      const isToday = ds===todayStr();
+      const isSelected = ds===selectedDate;
+      grid.appendChild(el('div',{
+        class:'date-popover-cell'+(inMonth?'':' other-month')+(isToday?' today':'')+(isSelected?' selected':''),
+        onclick:(e)=>{
+          e.stopPropagation();
+          selectedDate = ds;
+          displayBtn.replaceChildren(el('span',{}, niceDateLong(selectedDate)), el('span',{class:'date-field-icon'}, '📅'));
+          closePopover();
+        }
+      }, String(d.getDate())));
+    });
+    popover.appendChild(grid);
+
+    popover.appendChild(el('button',{type:'button', class:'date-popover-today', onclick:(e)=>{
+      e.stopPropagation();
+      selectedDate = todayStr();
+      pickerOffset = 0;
+      displayBtn.replaceChildren(el('span',{}, niceDateLong(selectedDate)), el('span',{class:'date-field-icon'}, '📅'));
+      closePopover();
+    }}, 'Today'));
+  }
+
+  displayBtn.addEventListener('click', (e)=>{
+    e.stopPropagation();
+    if(popover.classList.contains('hidden')) openPopover(); else closePopover();
+  });
+
+  return { el: wrapper, getValue: ()=>selectedDate };
+}
+
+function renderWrappedModal(){
+  return el('div',{class:'overlay', onclick:(e)=>{ if(e.target.classList.contains('overlay')){ state.showWrappedIntro=false; render(); } }},
+    el('div',{class:'wrapped-modal'},
+      renderWrappedCard(state.wrappedIntroYear),
+      el('div',{class:'wrapped-modal-actions'},
+        el('button',{class:'download-btn', onclick: downloadWrappedCard}, '⬇ Download'),
+        el('button',{class:'wrapped-close-btn', onclick:()=>{ state.showWrappedIntro=false; render(); }}, 'Close')
+      )
+    )
+  );
+}
+
+function createSubtaskEditor(initialSubtasks){
+  let subtasks = (initialSubtasks || []).map(s=>({...s}));
+  const listEl = el('div',{class:'subtask-edit-list'});
+  const inputEl = el('input',{type:'text', placeholder:'Add a subtask, press Enter…', class:'subtask-edit-input'});
+
+  function renderList(){
+    listEl.innerHTML = '';
+    subtasks.forEach((s,idx)=>{
+      listEl.appendChild(el('div',{class:'subtask-edit-row'},
+        el('span',{class:'subtask-edit-title'}, s.title),
+        el('button',{type:'button', onclick:()=>{ subtasks.splice(idx,1); renderList(); }}, '✕')
+      ));
+    });
+  }
+  renderList();
+
+  function addSubtask(){
+    const title = inputEl.value.trim();
+    if(!title) return;
+    subtasks.push({ id: genId(), title, completed:false });
+    inputEl.value = '';
+    renderList();
+  }
+  inputEl.addEventListener('keydown',(e)=>{ if(e.key==='Enter'){ e.preventDefault(); addSubtask(); } });
+
+  const wrap = el('div',{class:'subtask-editor'},
+    listEl,
+    el('div',{class:'subtask-add-row'}, inputEl, el('button',{type:'button', onclick: addSubtask}, '+'))
+  );
+  return { el: wrap, getValue: ()=> subtasks };
+}
+
+function renderModal(){
+  const editing = state.editingTask;
+  let currentType = editing ? (editing.type || 'task') : 'task';
+
+  const titleInput = el('input',{type:'text', value: editing?editing.title:takePrefill(), placeholder: currentType==='event' ? 'Event title' : 'Task title'});
+  const catSelect = el('select',{}, state.categories.map(c=>el('option',{value:c, ...(editing&&editing.category===c?{selected:'selected'}:{})}, c)));
+  const datePicker = createDatePicker(editing?editing.dueDate:todayStr());
+  const completedPicker = (editing && editing.completed && editing.completedAt) ? createDatePicker(editing.completedAt) : null;
+  const timeInput = el('input',{type:'time', value: (editing&&editing.time)?editing.time:''});
+  const remindInput = el('input',{type:'time', value: (editing&&editing.remindTime)?editing.remindTime:''});
+  const endInput = el('input',{type:'time', value: (editing&&editing.endTime)?editing.endTime:''});
+  const endError = el('div',{class:'settings-hint', style:'color:var(--danger); display:none; margin-top:5px;'});
+  const notesInput = el('textarea',{placeholder:'Notes (optional)'}, editing?editing.notes:'');
+  const recurOptions = [['none','Does not repeat'],['daily','Daily'],['weekly','Weekly'],['monthly','Monthly'],['yearly','Yearly — birthdays, anniversaries']];
+  const recurSelect = el('select',{}, recurOptions.map(([val,label])=>el('option',{value:val, ...((editing?editing.recurrence:'none')===val?{selected:'selected'}:{})}, label)));
+  const priorityCheckbox = el('input',{type:'checkbox', ...((editing&&editing.priority)?{checked:'checked'}:{})});
+  const subtaskEditor = createSubtaskEditor(editing?editing.subtasks:[]);
+
+  const heading = el('h2',{}, editing ? (currentType==='event'?'Edit Event':'Edit Task') : (currentType==='event'?'New Event':'New Task'));
+  const dateLabel = el('label',{}, currentType==='event' ? 'Date' : 'Due Date');
+  const timeFieldWrap = el('div',{class:'field', style: currentType==='event' ? '' : 'display:none;'}, el('label',{},'Start time (optional)'), timeInput,
+    el('label',{style:'margin-top:10px;'},'End time (optional)'), endInput, endError);
+  const priorityFieldWrap = el('label',{class:'priority-check', style: currentType==='event' ? 'display:none;' : ''}, priorityCheckbox, ' ★ High priority — stays visible before it\'s due');
+  const subtaskFieldWrap = el('div',{class:'field', style: currentType==='event' ? 'display:none;' : ''}, el('label',{},'Subtasks'), subtaskEditor.el);
+  const submitBtn = el('button',{class:'primary', onclick: async ()=>{
+    if(!titleInput.value.trim()) return;
+    if(currentType==='event' && endInput.value && (!timeInput.value || endInput.value <= timeInput.value)){
+      endError.textContent = timeInput.value ? 'End time must be after the start time.' : 'Add a start time to use an end time.';
+      endError.style.display = ''; return;
+    }
+    const data = {
+      type: currentType, title:titleInput.value.trim(), category:catSelect.value, dueDate:datePicker.getValue(),
+      time: currentType==='event' ? timeInput.value : '', endTime: currentType==='event' ? endInput.value : '', remindTime: remindInput.value, notes:notesInput.value.trim(), recurrence:recurSelect.value,
+      ...(completedPicker ? { completedAt: completedPicker.getValue() } : {}),
+      priority: currentType==='event' ? false : priorityCheckbox.checked,
+      subtasks: currentType==='event' ? [] : subtaskEditor.getValue()
+    };
+    if(editing){ await updateTask(editing.id, data); }
+    else{ await addTask(data); }
+    state.modalOpen=false; render();
+  }}, editing ? 'Save Changes' : (currentType==='event' ? 'Add Event' : 'Add Task'));
+
+  function setType(newType){
+    currentType = newType;
+    typeTaskBtn.className = 'type-toggle-btn' + (currentType==='task' ? ' active' : '');
+    typeEventBtn.className = 'type-toggle-btn' + (currentType==='event' ? ' active' : '');
+    titleInput.placeholder = currentType==='event' ? 'Event title' : 'Task title';
+    timeFieldWrap.style.display = currentType==='event' ? '' : 'none';
+    priorityFieldWrap.style.display = currentType==='event' ? 'none' : '';
+    subtaskFieldWrap.style.display = currentType==='event' ? 'none' : '';
+    dateLabel.textContent = currentType==='event' ? 'Date' : 'Due Date';
+    heading.textContent = editing ? (currentType==='event'?'Edit Event':'Edit Task') : (currentType==='event'?'New Event':'New Task');
+    submitBtn.textContent = editing ? 'Save Changes' : (currentType==='event' ? 'Add Event' : 'Add Task');
+  }
+  const typeTaskBtn = el('button',{type:'button', class:'type-toggle-btn'+(currentType==='task'?' active':''), onclick:()=>setType('task')}, '✓ Task');
+  const typeEventBtn = el('button',{type:'button', class:'type-toggle-btn'+(currentType==='event'?' active':''), onclick:()=>setType('event')}, '📌 Event');
+
+  const modal = el('div',{class:'modal'},
+    heading,
+    el('div',{class:'type-toggle-row'}, typeTaskBtn, typeEventBtn),
+    el('div',{class:'field'}, el('label',{},'Title'), titleInput),
+    priorityFieldWrap,
+    el('div',{class:'field'}, el('label',{},'Category'), catSelect),
+    el('div',{class:'field', style:'position:relative;'}, dateLabel, datePicker.el),
+    completedPicker ? el('div',{class:'field', style:'position:relative;'}, el('label',{},'Completed on'), completedPicker.el) : null,
+    timeFieldWrap,
+    el('div',{class:'field'}, el('label',{},'Remind me at (optional)'), remindInput,
+      el('div',{class:'settings-hint', style:'margin-top:5px;'}, 'Pops up with a sound on the due date while this tab is open.')),
+    el('div',{class:'field'}, el('label',{},'Repeats'), recurSelect),
+    el('div',{class:'field'}, el('label',{},'Notes'), notesInput),
+    subtaskFieldWrap,
+    el('div',{class:'modal-actions'},
+      el('button',{onclick:()=>{ state.modalOpen=false; render(); }}, 'Cancel'),
+      submitBtn
+    )
+  );
+  return el('div',{class:'overlay', onclick:(e)=>{ if(e.target.classList.contains('overlay')){ state.modalOpen=false; render(); } }}, modal);
+}
+
+function bestCategoryStat(){
+  const catStats = state.categories.map(cat=>{
+    const tasks = state.tasks.filter(t=>t.category===cat && (t.completed || t.dueDate < todayStr()));
+    const completed = tasks.filter(t=>t.completed).length;
+    return { cat, total: tasks.length, rate: tasks.length ? Math.round(completed/tasks.length*100) : null };
+  }).filter(c=>c.total>=1);
+  if(!catStats.length) return null;
+  return catStats.slice().sort((a,b)=>b.rate-a.rate)[0];
+}
+
+function renderAchievementsPanel(){
+  const stats = computeStats();
+  const lvl = levelInfo();
+  const achievements = computeAchievements();
+  const unlockedCount = achievements.filter(a=>a.unlocked).length;
+  const best = bestCategoryStat();
+
+  const panel = el('div',{class:'achievements-panel'});
+  panel.appendChild(el('div',{class:'section-title'}, `Achievements — ${unlockedCount}/${achievements.length} unlocked`));
+
+  const grid = el('div',{class:'badge-grid'});
+  achievements.forEach(a=>{
+    grid.appendChild(el('div',{class:'badge-item'+(a.unlocked?' unlocked':''), title:a.desc},
+      el('div',{class:'badge-icon'}, a.unlocked ? a.icon : '🔒'),
+      el('div',{class:'badge-name'}, a.name)
+    ));
+  });
+  panel.appendChild(grid);
+
+  const today = new Date().toLocaleDateString('en-US',{month:'long', day:'numeric', year:'numeric'});
+  const unlockedBadges = achievements.filter(a=>a.unlocked);
+  const shareCard = el('div',{id:'share-card', class:'share-card'},
+    el('div',{class:'share-header'},
+      el('div',{class:'share-title'}, (state.meta.appName||'WEEKLY'), el('span',{},' — Achievements')),
+      el('div',{class:'share-date'}, today)
+    ),
+    el('div',{class:'share-level-row'},
+      el('div',{class:'share-level-num'}, 'Lv ' + lvl.level),
+      el('div',{class:'share-xp'}, lvl.xp + ' XP total')
+    ),
+    el('div',{class:'share-stats-row'},
+      el('div',{class:'share-stat'}, el('div',{class:'v'}, stats.completionRate+'%'), el('div',{class:'l'},'Completion')),
+      el('div',{class:'share-stat'}, el('div',{class:'v'}, String(stats.streak)), el('div',{class:'l'},'Day Streak')),
+      el('div',{class:'share-stat'}, el('div',{class:'v'}, String(stats.completedCount)), el('div',{class:'l'},'Tasks Closed')),
+      el('div',{class:'share-stat'}, el('div',{class:'v'}, best?best.cat:'—'), el('div',{class:'l'},'Top Category'))
+    ),
+    el('div',{class:'share-badges'},
+      unlockedBadges.length
+        ? unlockedBadges.map(a=>el('span',{class:'share-badge-chip'}, a.icon+' '+a.name))
+        : el('span',{class:'share-badge-chip empty'}, 'No badges yet — get started!')
+    ),
+    el('div',{class:'share-footer'}, '◆ Generated with '+(state.meta.appName||'WEEKLY'))
+  );
+  panel.appendChild(shareCard);
+  panel.appendChild(el('button',{class:'download-btn', onclick: downloadAchievementCard}, '⬇ Download as Image'));
+
+  return panel;
+}
+
+function downloadAchievementCard(){
+  const node = document.getElementById('share-card');
+  if(!node || !window.html2canvas) return;
+  const bg = getComputedStyle(document.documentElement).getPropertyValue('--surface').trim() || THEMES.moonlit.exportBg;
+  window.html2canvas(node, { backgroundColor: bg, scale:2 }).then(canvas=>{
+    const link = document.createElement('a');
+    link.download = 'weekly-achievements.png';
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+  }).catch(err=>{ console.error('Export failed', err); });
+}
+
+function renderPlotLogPanel(){
+  const log = state.plot.log;
+  const panel = el('div',{class:'plot-log-panel'});
+  panel.appendChild(el('div',{class:'section-title'}, `✨ The Element of Surprise — ${log.length} moment${log.length===1?'':'s'} so far`));
+  if(!log.length){
+    panel.appendChild(el('div',{class:'empty'}, 'Nothing logged yet — tap the ✨ in the header whenever you want a little nudge.'));
+    return panel;
+  }
+  const sorted = log.slice().sort((a,b)=> b.date.localeCompare(a.date));
+  sorted.slice(0,10).forEach(entry=>{
+    panel.appendChild(el('div',{class:'plot-log-entry'},
+      el('span',{class:'plot-log-date'}, niceDate(entry.date)),
+      el('span',{class:'plot-log-text'}, entry.text)
+    ));
+  });
+  if(sorted.length>10){
+    panel.appendChild(el('div',{class:'plot-log-more'}, `+ ${sorted.length-10} earlier`));
+  }
+  return panel;
+}
+
+function renderWrappedCard(year){
+  const stats = computeYearStats(year);
+  const tone = yearToneInfo(stats);
+  const lines = wellDoneLines(stats);
+  const appName = state.meta.appName || 'WEEKLY';
+
+  return el('div',{id:'wrapped-card', 'data-year':String(year), class:'wrapped-card'},
+    el('div',{class:'wrapped-header'},
+      el('div',{class:'wrapped-appname'}, appName),
+      el('div',{class:'wrapped-year'}, String(year) + ' in Review')
+    ),
+    el('div',{class:'wrapped-title'}, tone.title),
+    el('div',{class:'wrapped-metaphor'}, tone.metaphor),
+    el('div',{class:'wrapped-stats-row'},
+      el('div',{class:'wrapped-stat'}, el('div',{class:'v'}, String(stats.totalCompleted)), el('div',{class:'l'},'Tasks closed')),
+      el('div',{class:'wrapped-stat'}, el('div',{class:'v'}, String(stats.longest)), el('div',{class:'l'},'Best streak')),
+      el('div',{class:'wrapped-stat'}, el('div',{class:'v'}, String(stats.plotCount)), el('div',{class:'l'},'Moments for you'))
+    ),
+    el('div',{class:'wrapped-welldone-title'}, 'What stood out'),
+    ...lines.map(l=> el('div',{class:'wrapped-line'}, '✦ ', l)),
+    el('div',{class:'wrapped-footer'}, `Generated with ${appName}`)
+  );
+}
+
+function renderYearInReviewPanel(){
+  const { targetYear } = wrappedSeasonInfo();
+  const panel = el('div',{class:'wrapped-panel'});
+  panel.appendChild(el('div',{class:'section-title'}, `🎁 ${targetYear} in Review`));
+  panel.appendChild(renderWrappedCard(targetYear));
+  panel.appendChild(el('button',{class:'download-btn', onclick: downloadWrappedCard}, '⬇ Download as Image'));
+  return panel;
+}
+
+function renderReportView(){
+  const stats = computeStats();
+  const wrap = el('div',{});
+  wrap.appendChild(el('div',{class:'stat-grid'},
+    el('div',{class:'stat-card'}, el('div',{class:'val'}, stats.completionRate+'%'), el('div',{class:'lbl'},'Completion Rate')),
+    el('div',{class:'stat-card'}, el('div',{class:'val'}, stats.streak), el('div',{class:'lbl'},'Current Streak (days)')),
+    el('div',{class:'stat-card'}, el('div',{class:'val'}, stats.longest), el('div',{class:'lbl'},'Longest Streak (days)')),
+    el('div',{class:'stat-card'}, el('div',{class:'val'}, stats.avgDays), el('div',{class:'lbl'},'Avg. Days to Complete'))
+  ));
+
+  const insights = computeInsights();
+  const insightsPanel = el('div',{class:'insights-panel'});
+  insightsPanel.appendChild(el('div',{class:'section-title'}, 'Insights'));
+  if(!insights.length){
+    insightsPanel.appendChild(el('div',{class:'empty'}, 'Complete a few more tasks to unlock insights.'));
+  } else {
+    insights.forEach(ins=>{
+      insightsPanel.appendChild(el('div',{class:'insight-card '+ins.tone},
+        el('span',{class:'insight-icon'}, ins.icon),
+        el('span',{}, ins.text)
+      ));
+    });
+  }
+  wrap.appendChild(insightsPanel);
+
+  wrap.appendChild(renderAchievementsPanel());
+
+  wrap.appendChild(renderPlotLogPanel());
+
+  if(wrappedSeasonInfo().inSeason){ wrap.appendChild(renderYearInReviewPanel()); }
+
+  const chartGrid = el('div',{class:'chart-grid'});
+  const c1 = el('div',{class:'chart-card'}, el('h3',{},'Completion % — last 8 weeks'), el('canvas',{id:'chartCompletion'}));
+  const c2 = el('div',{class:'chart-card'}, el('h3',{},'Overdue Tasks — last 8 weeks'), el('canvas',{id:'chartOverdue'}));
+  chartGrid.appendChild(c1); chartGrid.appendChild(c2);
+  wrap.appendChild(chartGrid);
+
+  setTimeout(()=>{
+    const chartColors = (THEMES[state.currentTheme] || THEMES.moonlit).chart;
+    const ctx1 = document.getElementById('chartCompletion');
+    if(ctx1 && window.Chart){
+      chartInstances.push(new Chart(ctx1, {
+        type:'line',
+        data:{ labels: stats.weeks.map(w=>w.label), datasets:[{
+          label:'Completion %', data: stats.weeks.map(w=>w.rate),
+          borderColor:chartColors.line, backgroundColor:chartColors.lineFill, tension:0.35, fill:true, spanGaps:true, pointRadius:3
+        }]},
+        options:{ responsive:true, plugins:{legend:{display:false}},
+          scales:{ y:{ min:0, max:100, ticks:{color:chartColors.tick}, grid:{color:chartColors.grid} }, x:{ ticks:{color:chartColors.tick}, grid:{display:false} } } }
+      }));
+    }
+    const ctx2 = document.getElementById('chartOverdue');
+    if(ctx2 && window.Chart){
+      chartInstances.push(new Chart(ctx2, {
+        type:'bar',
+        data:{ labels: stats.weeks.map(w=>w.label), datasets:[{
+          label:'Overdue', data: stats.weeks.map(w=>w.overdueCount),
+          backgroundColor:chartColors.bar, borderRadius:4
+        }]},
+        options:{ responsive:true, plugins:{legend:{display:false}},
+          scales:{ y:{ beginAtZero:true, ticks:{color:chartColors.tick, precision:0}, grid:{color:chartColors.grid} }, x:{ ticks:{color:chartColors.tick}, grid:{display:false} } } }
+      }));
+    }
+  }, 0);
+
+  wrap.appendChild(el('div',{class:'section-title'}, `Lifetime — ${stats.completedCount} of ${stats.total} tasks completed`));
+  return wrap;
+}
+
+/* ============================ UPDATE CHECK ============================ */
+// Each upload changes the version stamp in <meta name="app-version">. The running page compares
+// its own stamp with a fresh copy fetched from the server (bypassing the browser cache), so a
+// stale copy can say so instead of silently staying old. Does nothing when opened as a local file.
+const APP_VERSION = (document.querySelector('meta[name="app-version"]') || {}).content || '';
+async function checkForAppUpdate(){
+  if(!APP_VERSION || location.protocol === 'file:' || state.updateAvailable) return;
+  try{
+    const url = location.href.split('#')[0].split('?')[0] + '?v=' + Date.now();
+    const res = await fetch(url, { cache:'no-store' });
+    if(!res.ok) return;
+    const txt = await res.text();
+    const m = txt.match(/<meta name="app-version" content="([^"]*)"/);
+    if(m && m[1] && m[1] !== APP_VERSION){
+      state.updateAvailable = true;
+      const nn = txt.match(/<meta name="app-notes" content="([^"]*)"/);
+      state.updateNotes = nn ? nn[1] : '';
+      // Don't rebuild the page under an open form; the banner shows on the next normal render.
+      if(!state.modalOpen && !state.settingsOpen && !state.editingAppName) render();
+    }
+  }catch(e){ /* offline or blocked: try again next time */ }
+}
+function renderUpdateBanner(){
+  return el('div',{class:'banner'},
+    el('div',{class:'msg'}, 'A newer version is ready' + (state.updateNotes ? ': ' + state.updateNotes : '.')),
+    el('button',{class:'habit-accept-btn', onclick:()=>location.reload()}, 'Reload')
+  );
+}
+
+/* ============================ INIT ============================ */
+async function init(){
+  document.getElementById('app').innerHTML = '<div class="fine" style="padding-top:60px;">Loading…</div>';
+  await loadState();
+  applyTheme(state.meta.theme);
+  const fieldsFixed = migrateTaskFields();
+  const migrated = migrateLegacyRecurring();
+  const toppedUp = topUpAllSeries();
+  if(fieldsFixed || migrated || toppedUp){ await saveTasks(); }
+  if(migratePeriodData()){ await savePeriod(); }
+  if(migratePeriodEnabledFlag()){ await savePeriod(); await saveMeta(); }
+  checkDailyReminder();
+  checkWrappedTrigger();
+  render();
+  checkPeriodNotice();
+  setInterval(checkPeriodNotice, 15*60000);
+  document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) checkPeriodNotice(); });
+  checkForAppUpdate();
+  setInterval(checkForAppUpdate, 5*60000);
+  document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) checkForAppUpdate(); });
+  checkTaskReminders();
+  setInterval(checkTaskReminders, 30000);
+}
+init();
+
+})();
+</script>
+</body>
+</html>
