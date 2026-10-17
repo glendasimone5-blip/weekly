@@ -4,8 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Weekly — Task Console</title>
-<meta name="app-version" content="2026-10-09a">
-<meta name="app-notes" content="Reminder popups, period heads-up and check-in notices, event end times, editing completed tasks, backup and restore, and a New Task button that opens the full form.">
+<meta name="app-version" content="2026-10-10a">
+<meta name="app-notes" content="Reminder popups, period heads-up and check-in notices, event end times, editing completed tasks, a new weekly balance view, backup and restore, and a New Task button that opens the full form.">
 <script>
   // Runs before anything else in <head>, including the external libraries
   // below (which block parsing while they load) — otherwise the theme
@@ -765,6 +765,14 @@
   .reminder-popup-actions .reminder-done-btn{ background:var(--accent); border-color:var(--accent); color:var(--on-accent); font-weight:700; }
   .banner.period-notice{ flex-wrap:wrap; }
   .period-notice-actions{ display:flex; gap:8px; flex-wrap:wrap; }
+  .pulse-balance-main{ flex:1; min-width:240px; display:flex; flex-direction:column; gap:9px; }
+  .balance-bar{ display:flex; gap:3px; height:16px; }
+  .balance-seg{ position:relative; border-radius:5px; overflow:hidden; min-width:10px; border:1px solid var(--text-faint); }
+  .balance-seg-bg{ position:absolute; inset:0; opacity:0.25; }
+  .balance-seg-fill{ position:absolute; left:0; top:0; bottom:0; }
+  .balance-legend{ display:flex; flex-wrap:wrap; gap:4px 16px; font-family:var(--mono); font-size:11px; color:var(--text-dim); }
+  .balance-legend .cat-swatch{ margin-right:6px; }
+  .balance-note{ font-size:12px; color:var(--text-faint); line-height:1.5; }
   .fine{ text-align:center; color:var(--text-faint); font-size:11.5px; margin-top:30px; font-family:var(--mono); }
 
   /* ---------- Celebration: animation, toast, streak badge ---------- */
@@ -2530,6 +2538,50 @@ function renderPlotPopover(){
 
 
 function renderPulse(){
+  // Weekly Balance: where this week's attention is going, by category. No comparison with
+  // other weeks and no score. Counts and category names carry the meaning, never colour alone.
+  const offset = state.weekOffset;
+  const dates = weekDates(offset).map(fmt);
+  const tasks = state.tasks.filter(t=>t.type!=='event' && dates.includes(t.dueDate));
+  const cats = state.categories.map(cat=>{
+    const items = tasks.filter(t=>t.category===cat);
+    return { cat, total: items.length, done: items.filter(t=>t.completed).length };
+  }).filter(c=>c.total>0);
+  const total = tasks.length, done = tasks.filter(t=>t.completed).length;
+  const moments = state.plot.log.filter(e=>e.date && dates.includes(e.date)).length;
+  const label = offset===0 ? 'Weekly Balance' : 'Weekly Balance · ' + weekLabel(offset);
+
+  const main = el('div',{class:'pulse-balance-main'}, el('div',{class:'pulse-label'}, label));
+  if(!total){
+    main.appendChild(el('div',{class:'balance-note'}, 'Nothing planned this week yet.'));
+  } else {
+    const bar = el('div',{class:'balance-bar'});
+    cats.forEach(c=>{
+      bar.appendChild(el('div',{class:'balance-seg', style:'flex:'+c.total+' 1 0;', title:c.cat+': '+c.done+' of '+c.total+' done'},
+        el('div',{class:'balance-seg-bg', style:'background:'+catColor(c.cat)}),
+        el('div',{class:'balance-seg-fill', style:'background:'+catColor(c.cat)+'; width:'+Math.round(c.done/c.total*100)+'%'})
+      ));
+    });
+    main.appendChild(bar);
+    main.appendChild(el('div',{class:'balance-legend'},
+      cats.map(c=> el('span',{}, el('i',{class:'cat-swatch', style:'background:'+catColor(c.cat)}), c.cat+' '+c.done+'/'+c.total))
+    ));
+    const top = cats.slice().sort((a,b)=>b.total-a.total)[0];
+    if(total >= 4 && top.total/total >= 0.7){
+      main.appendChild(el('div',{class:'balance-note'}, 'This week leans toward ' + top.cat + '.'));
+    }
+  }
+  main.appendChild(el('div',{class:'balance-note'}, moments
+    ? '✨ ' + moments + ' moment' + (moments===1?'':'s') + ' for yourself this week'
+    : '✨ A small moment for yourself is one tap away'));
+
+  return el('div',{class:'pulse-wrap pulse-balance'},
+    main,
+    total ? el('div',{}, el('div',{class:'pulse-score'}, done+'/'+total, el('span',{},'done this week'))) : null
+  );
+}
+
+function renderPulseLegacy(){
   const offset = state.weekOffset;
   const dates = weekDates(offset);
   const today = todayStr();
