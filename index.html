@@ -4,8 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Weekly — Task Console</title>
-<meta name="app-version" content="2026-10-10a">
-<meta name="app-notes" content="Reminder popups, period heads-up and check-in notices, event end times, editing completed tasks, a new weekly balance view, backup and restore, and a New Task button that opens the full form.">
+<meta name="app-version" content="2026-10-11a">
+<meta name="app-notes" content="Reminder popups, period heads-up, start and end check-ins, event end times, editing completed tasks, a new weekly balance view, backup and restore, and a New Task button that opens the full form.">
 <script>
   // Runs before anything else in <head>, including the external libraries
   // below (which block parsing while they load) — otherwise the theme
@@ -2646,7 +2646,19 @@ function periodLeadDays(){ const v = state.meta.periodLeadDays; return v === und
 //  checkin: from the day after the expected start, until it's logged, skipped, or snoozed to a later day
 function currentPeriodNotice(){
   if(!state.period.enabled || state.period.mode !== 'cycle' || !state.period.loggedPeriods.length) return null;
-  if(currentOngoingPeriod()) return null;
+  const ongoing = currentOngoingPeriod();
+  if(ongoing){
+    // An ongoing period gets an end check-in from the day after its typical length has passed.
+    const today0 = todayStr();
+    const sinceStart = Math.round((parseDate(today0) - parseDate(ongoing.start)) / DAY_MS);
+    const typical = state.period.periodLength;
+    if(sinceStart < typical) return null;
+    const store0 = periodNoticeStore();
+    if(store0.dismissed[ongoing.start+'|e']) return null;
+    if((store0.snoozeUntil[ongoing.start+'|e'] || '') > today0) return null;
+    const e = parseDate(ongoing.start); e.setDate(e.getDate() + typical - 1);
+    return { kind:'endcheck', start:ongoing.start, expectedEnd:fmt(e), days:sinceStart - typical + 1 };
+  }
   const next = predictedPeriods()[0];
   if(!next) return null;
   const store = periodNoticeStore();
@@ -2666,6 +2678,7 @@ function currentPeriodNotice(){
 function periodNoticeText(n){
   if(n.kind === 'headsup') return '🩸 Your period is estimated to start in ' + n.days + ' day' + (n.days===1?'':'s') + ' (around ' + niceDate(n.start) + ').';
   if(n.kind === 'dayof') return '🩸 Your period is estimated to start today.';
+  if(n.kind === 'endcheck') return '🩸 Quick check-in: your period was expected to wrap up around ' + niceDate(n.expectedEnd) + '. Has it finished? Keeping this accurate helps your estimates.';
   return '🩸 Quick check-in: your period was expected around ' + niceDate(n.start) + '. Has it started? No pressure, this just keeps your log accurate.';
 }
 function tomorrowStr(){ const d = new Date(); d.setDate(d.getDate()+1); return fmt(d); }
@@ -2677,12 +2690,29 @@ function goLogPeriodOn(startStr){
   state.periodEditingEntry = null; state.periodLogFormOpen = true;
   render();
 }
+// Opens the calendar's period form for the ongoing entry, with an end date pre-filled.
+function goEndPeriodOn(n){
+  const entry = state.period.loggedPeriods.find(p=>p.start===n.start && p.end===null);
+  if(!entry) return;
+  const d = parseDate(n.expectedEnd), now = new Date();
+  state.view = 'calendar'; state.searchQuery = '';
+  state.calendarMonthOffset = (d.getFullYear()-now.getFullYear())*12 + (d.getMonth()-now.getMonth());
+  state.calendarSelectedDate = n.expectedEnd;
+  state.periodEditingEntry = { id:entry.id, start:entry.start, end:n.expectedEnd };
+  state.periodLogFormOpen = true;
+  render();
+}
+
 function renderPeriodNoticeBanner(){
   const n = currentPeriodNotice();
   if(!n) return null;
   const store = periodNoticeStore();
   const dismiss = (k)=>{ store.dismissed[k] = 1; saveMeta(); render(); };
-  const actions = n.kind === 'checkin' ? [
+  const actions = n.kind === 'endcheck' ? [
+    el('button',{class:'habit-accept-btn', onclick:()=>{ endPeriodToday(); }}, 'Yes, it ended today'),
+    el('button',{onclick:()=>{ goEndPeriodOn(n); }}, 'It ended another day'),
+    el('button',{onclick:()=>{ store.snoozeUntil[n.start+'|e'] = tomorrowStr(); saveMeta(); render(); }}, 'Still going')
+  ] : n.kind === 'checkin' ? [
     el('button',{class:'habit-accept-btn', onclick:()=>{ startPeriodToday(); }}, 'Yes, it started today'),
     el('button',{onclick:()=>{ goLogPeriodOn(n.start); }}, 'It started another day'),
     el('button',{onclick:()=>{ store.snoozeUntil[n.start] = tomorrowStr(); saveMeta(); render(); }}, 'Not yet'),
