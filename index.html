@@ -4,8 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Weekly — Task Console</title>
-<meta name="app-version" content="2026-10-11a">
-<meta name="app-notes" content="Reminder popups, period heads-up, start and end check-ins, event end times, editing completed tasks, a new weekly balance view, backup and restore, and a New Task button that opens the full form.">
+<meta name="app-version" content="2026-10-12a">
+<meta name="push-server" content="https://weekly-push.glendasimone5.workers.dev">
+<meta name="vapid-public" content="BC-oohRYdwdxzqXouwUBrQaCByRvzuUjy8b4DJceMHyCqO3XHOEfJklA7L0F82DayZs8B2XPIiYBkvV8MpSXRt8">
+<meta name="app-notes" content="Reminder popups, period heads-up, start and end check-ins, reminders that work when the app is closed, event end times, editing completed tasks, a new weekly balance view, backup and restore, and a New Task button that opens the full form.">
 <script>
   // Runs before anything else in <head>, including the external libraries
   // below (which block parsing while they load) — otherwise the theme
@@ -1068,6 +1070,7 @@ async function loadState(){
 }
 async function saveTasks(){
   try{ await storageSet('tasks', JSON.stringify(state.tasks)); }catch(e){ console.error('save tasks failed', e); }
+  schedulePushSync();
 }
 async function saveCategories(){
   try{ await storageSet('categories', JSON.stringify(state.categories)); }catch(e){ console.error('save categories failed', e); }
@@ -2462,6 +2465,16 @@ function renderSettingsModal(){
         state.notifPermission!=='granted' && state.notifPermission!=='unsupported'
           ? el('button',{class:'settings-action-btn', onclick: enableNotifications}, 'Enable') : null
       ),
+      el('div',{class:'settings-subsection-title'}, 'Reliable Reminders'),
+      pushAvailable() ? el('div',{},
+        el('div',{class:'settings-hint', style:'margin-bottom:8px;'}, state.meta.pushOn
+          ? '● On for this device. Reminders you give a time will alert even when the app is closed (on a computer, Chrome or Edge must be running).'
+          : 'Get reminders when the app is closed. Turn this on separately on each device.'),
+        el('div',{style:'display:flex; gap:8px; flex-wrap:wrap;'},
+          state.meta.pushOn ? el('button',{class:'quickadd-full-btn', onclick: sendPushTest}, 'Send a test in 1 minute') : null,
+          el('button',{class: state.meta.pushOn ? 'quickadd-full-btn' : 'settings-action-btn', onclick: state.meta.pushOn ? disablePush : enablePush}, state.meta.pushOn ? 'Turn off' : 'Turn on')
+        )
+      ) : el('div',{class:'settings-hint'}, location.protocol === 'https:' ? 'Not available in this browser.' : 'Open the app from its web address (https) to use this. It does not work from a file on your computer.'),
       el('div',{class:'settings-subsection-title'}, 'Notification Sound'),
       el('div',{class:'sound-option-grid'},
         Object.entries(NOTIFICATION_SOUNDS).map(([key,sound])=>{
@@ -2745,6 +2758,122 @@ function checkPeriodNotice(){
     }
   }
   render();
+}
+
+/* ============================ RELIABLE REMINDERS (WEB PUSH) ============================ */
+// The push server only learns WHEN to ping this device. Reminder text stays on the device:
+// the service worker reads it from a local copy (IndexedDB) that the app keeps up to date here.
+const PUSH_SERVER = ((document.querySelector('meta[name="push-server"]') || {}).content || '').replace(/\/$/, '');
+const VAPID_PUBLIC_KEY = (document.querySelector('meta[name="vapid-public"]') || {}).content || '';
+const PUSH_WINDOW_DAYS = 30;
+let pushSyncTimer = null, pushLastHash = '', pushTest = null;
+
+function pushAvailable(){
+  return !!(PUSH_SERVER && VAPID_PUBLIC_KEY && location.protocol === 'https:' && 'serviceWorker' in navigator && 'PushManager' in window && typeof Notification !== 'undefined');
+}
+function b64uToBytes(s){
+  const b = atob((s + '='.repeat((4 - s.length % 4) % 4)).replace(/-/g,'+').replace(/_/g,'/'));
+  return Uint8Array.from(b, c => c.charCodeAt(0));
+}
+async function pushPost(path, body){
+  const r = await fetch(PUSH_SERVER + path, { method:'POST', headers:{ 'Content-Type':'text/plain;charset=UTF-8' }, body:JSON.stringify(body) });
+  return { status:r.status, json: await r.json().catch(()=>({})) };
+}
+function pushMessage(text){
+  state.toast = { text };
+  render();
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=>{ state.toast = null; render(); }, 5000);
+}
+function buildReminderItems(){
+  const now = Date.now(), horizon = now + PUSH_WINDOW_DAYS*86400000, items = [];
+  state.tasks.forEach(t=>{
+    if(!t.remindTime || t.completed) return;
+    const [y,m,d] = t.dueDate.split('-').map(Number), [hh,mm] = t.remindTime.split(':').map(Number);
+    const at = new Date(y, m-1, d, hh, mm).getTime();
+    if(at <= now || at > horizon) return;
+    items.push({ rid: t.id+'@'+at, at, title: t.title, body: t.type==='event' ? 'Event reminder' : 'Task reminder' });
+  });
+  if(pushTest && pushTest.at > Date.now()) items.push(pushTest);
+  return items.sort((a,b)=>a.at-b.at).slice(0,300);
+}
+function idbOpen(){
+  return new Promise((res, rej)=>{
+    const r = indexedDB.open('weekly-sw', 1);
+    r.onupgradeneeded = ()=> r.result.createObjectStore('reminders', { keyPath:'rid' });
+    r.onsuccess = ()=> res(r.result);
+    r.onerror = ()=> rej(r.error);
+  });
+}
+async function mirrorRemindersForWorker(items){
+  const db = await idbOpen();
+  await new Promise((res, rej)=>{
+    const tx = db.transaction('reminders', 'readwrite'), st = tx.objectStore('reminders');
+    st.clear();
+    items.forEach(i=> st.put(Object.assign({ shown:false }, i)));
+    tx.oncomplete = res; tx.onerror = ()=> rej(tx.error);
+  });
+  db.close();
+}
+async function ensurePushSubscription(){
+  const reg = await navigator.serviceWorker.register('sw.js');
+  await navigator.serviceWorker.ready;
+  let sub = await reg.pushManager.getSubscription();
+  if(!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly:true, applicationServerKey: b64uToBytes(VAPID_PUBLIC_KEY) });
+  const r = await pushPost('/register', { sub: sub.toJSON() });
+  if(r.status !== 200 || !r.json.id) throw new Error('the reminder server refused the registration (status '+r.status+')');
+  state.meta.pushDeviceId = r.json.id;
+  saveMeta();
+  return sub;
+}
+async function syncPushSchedule(force){
+  if(!state.meta.pushOn || !pushAvailable() || Notification.permission !== 'granted') return;
+  try{
+    const items = buildReminderItems();
+    const hash = items.map(i=>i.rid).join(',');
+    if(!force && hash === pushLastHash) return;
+    await mirrorRemindersForWorker(items);
+    const body = ()=>({ id: state.meta.pushDeviceId, items: items.map(i=>({ rid:i.rid, at:i.at })) });
+    let r = await pushPost('/schedule', body());
+    if(r.status === 404){ await ensurePushSubscription(); r = await pushPost('/schedule', body()); }
+    if(r.status === 200) pushLastHash = hash;
+  }catch(e){ console.error('push sync failed', e); }
+}
+function schedulePushSync(){
+  if(!state.meta.pushOn) return;
+  clearTimeout(pushSyncTimer);
+  pushSyncTimer = setTimeout(()=>syncPushSchedule(false), 2000);
+}
+async function enablePush(){
+  try{
+    const perm = await Notification.requestPermission();
+    state.notifPermission = perm;
+    if(perm !== 'granted'){ pushMessage("Notifications are blocked for this site. Allow them in your browser's site settings, then try again."); return; }
+    await ensurePushSubscription();
+    state.meta.pushOn = true;
+    await saveMeta();
+    pushLastHash = '';
+    await syncPushSchedule(true);
+    pushMessage('Reliable reminders are on for this device.');
+  }catch(e){ console.error(e); pushMessage('Could not turn on reliable reminders: ' + (e.message || e)); }
+}
+async function disablePush(){
+  try{
+    const reg = await navigator.serviceWorker.getRegistration();
+    const sub = reg && await reg.pushManager.getSubscription();
+    if(sub) await sub.unsubscribe();
+    if(state.meta.pushDeviceId) await pushPost('/unregister', { id: state.meta.pushDeviceId });
+  }catch(e){ /* turning off should always succeed locally */ }
+  state.meta.pushOn = false; state.meta.pushDeviceId = '';
+  await saveMeta();
+  pushMessage('Reliable reminders are off for this device.');
+}
+async function sendPushTest(){
+  const at = Date.now() + 60000;
+  pushTest = { rid:'test@'+at, at, title:'Weekly test reminder', body:'If you can see this, reliable reminders work.' };
+  pushLastHash = '';
+  await syncPushSchedule(true);
+  pushMessage('Test reminder scheduled for one minute from now. You can close the app.');
 }
 
 function renderBanner(){
@@ -3981,6 +4110,9 @@ async function init(){
   checkDailyReminder();
   checkWrappedTrigger();
   render();
+  syncPushSchedule(false);
+  setInterval(()=>syncPushSchedule(false), 30*60000);
+  document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) syncPushSchedule(false); });
   checkPeriodNotice();
   setInterval(checkPeriodNotice, 15*60000);
   document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) checkPeriodNotice(); });
