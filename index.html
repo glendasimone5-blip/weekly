@@ -4,10 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Weekly — Task Console</title>
-<meta name="app-version" content="2026-10-14a">
+<meta name="app-version" content="2026-10-15a">
 <meta name="push-server" content="https://weekly-push.glendasimone5.workers.dev">
 <meta name="vapid-public" content="BC-oohRYdwdxzqXouwUBrQaCByRvzuUjy8b4DJceMHyCqO3XHOEfJklA7L0F82DayZs8B2XPIiYBkvV8MpSXRt8">
-<meta name="app-notes" content="Reminder popups, period heads-up, start and end check-ins, reminders that work when the app is closed, event end times, editing completed tasks, a new weekly balance view, backup and restore, and a New Task button that opens the full form.">
+<meta name="app-notes" content="Reminder popups, period heads-up, start and end check-ins, reminders that work when the app is closed, a wider layout, a full-page Settings, event end times, editing completed tasks, a new weekly balance view, backup and restore, and a New Task button that opens the full form.">
 <script>
   // Runs before anything else in <head>, including the external libraries
   // below (which block parsing while they load) — otherwise the theme
@@ -775,6 +775,17 @@
   .balance-legend{ display:flex; flex-wrap:wrap; gap:4px 16px; font-family:var(--mono); font-size:11px; color:var(--text-dim); }
   .balance-legend .cat-swatch{ margin-right:6px; }
   .balance-note{ font-size:12px; color:var(--text-faint); line-height:1.5; }
+  #app{ max-width:1800px; padding:20px clamp(16px, 3vw, 44px) 80px; }
+  .week-main{ min-width:0; }
+  @media (min-width:761px){
+    .layout{ grid-template-columns:minmax(240px, 290px) minmax(0, 1fr); gap:24px; }
+    .sidebar{ max-height:calc(100vh - 40px); overflow-y:auto; }
+  }
+  .settings-modal.settings-page{ max-width:none; width:100%; background:transparent; border:none; padding:0; display:grid; grid-template-columns:repeat(auto-fit, minmax(340px, 1fr)); gap:16px; align-items:start; }
+  .settings-page-head{ grid-column:1 / -1; display:flex; align-items:center; justify-content:space-between; gap:12px; }
+  .settings-page-head h2{ margin:0; }
+  .settings-page .settings-section, .settings-page .settings-section:last-of-type{ background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:18px; margin:0; }
+  .settings-page .modal-actions{ display:none; }
   .fine{ text-align:center; color:var(--text-faint); font-size:11.5px; margin-top:30px; font-family:var(--mono); }
 
   /* ---------- Celebration: animation, toast, streak badge ---------- */
@@ -2244,14 +2255,14 @@ function render(){
   chartInstances = [];
 
   app.appendChild(renderHeader());
-  app.appendChild(renderPulse());
+  if(!state.settingsOpen){ app.appendChild(renderPulse()); }
   if(state.habitSuggestion){ app.appendChild(renderHabitBanner()); }
   { const pn = renderPeriodNoticeBanner(); if(pn){ app.appendChild(pn); } }
   if(state.updateAvailable){ app.appendChild(renderUpdateBanner()); }
   if(state.showBanner){ app.appendChild(renderBanner()); }
   else if(state.notifPermission === 'default'){ app.appendChild(renderEnableBanner()); }
 
-  if(state.searchQuery.trim()){
+  if(state.settingsOpen){ app.appendChild(renderSettingsPage()); } else if(state.searchQuery.trim()){
     app.appendChild(renderSearchView());
   } else if(state.view === 'week'){
     app.appendChild(renderWeekView());
@@ -2274,7 +2285,7 @@ function render(){
   if(reminderPopups.length){ app.appendChild(renderReminderPopups()); }
   if(state.modalOpen){ app.appendChild(renderModal()); }
   if(state.showWrappedIntro){ app.appendChild(renderWrappedModal()); }
-  if(state.settingsOpen){ app.appendChild(renderSettingsModal()); }
+  /* settings is a full page now (see renderSettingsPage) */
 
   if(focusedId){
     const newInput = document.getElementById(focusedId);
@@ -2325,12 +2336,12 @@ function renderHeader(){
   const header = el('header',{class:'top'},
     brand,
     el('nav',{class:'tabs'},
-      el('button',{class: state.view==='week' ? 'active':'', onclick:()=>{state.view='week'; state.searchQuery=''; render();}}, 'This Week'),
-      el('button',{class: state.view==='calendar' ? 'active':'', onclick:()=>{state.view='calendar'; state.searchQuery=''; render();}}, 'Calendar'),
-      el('button',{class: state.view==='upcoming' ? 'active':'', onclick:()=>{state.view='upcoming'; state.searchQuery=''; state.calendarSelectedDate=null; render();}}, 'Upcoming'),
-      el('button',{class: state.view==='all' ? 'active':'', onclick:()=>{state.view='all'; state.searchQuery=''; state.calendarSelectedDate=null; render();}}, 'All Tasks'),
-      el('button',{class: state.view==='completed' ? 'active':'', onclick:()=>{state.view='completed'; state.searchQuery=''; state.calendarSelectedDate=null; render();}}, 'Completed'),
-      el('button',{class: state.view==='report' ? 'active':'', onclick:()=>{state.view='report'; state.searchQuery=''; state.calendarSelectedDate=null; render();}}, 'Report'),
+      el('button',{class: state.view==='week' ? 'active':'', onclick:()=>{state.settingsOpen=false; state.view='week'; state.searchQuery=''; render();}}, 'This Week'),
+      el('button',{class: state.view==='calendar' ? 'active':'', onclick:()=>{state.settingsOpen=false; state.view='calendar'; state.searchQuery=''; render();}}, 'Calendar'),
+      el('button',{class: state.view==='upcoming' ? 'active':'', onclick:()=>{state.settingsOpen=false; state.view='upcoming'; state.searchQuery=''; state.calendarSelectedDate=null; render();}}, 'Upcoming'),
+      el('button',{class: state.view==='all' ? 'active':'', onclick:()=>{state.settingsOpen=false; state.view='all'; state.searchQuery=''; state.calendarSelectedDate=null; render();}}, 'All Tasks'),
+      el('button',{class: state.view==='completed' ? 'active':'', onclick:()=>{state.settingsOpen=false; state.view='completed'; state.searchQuery=''; state.calendarSelectedDate=null; render();}}, 'Completed'),
+      el('button',{class: state.view==='report' ? 'active':'', onclick:()=>{state.settingsOpen=false; state.view='report'; state.searchQuery=''; state.calendarSelectedDate=null; render();}}, 'Report'),
     ),
     el('div',{class:'search-wrap'},
       el('span',{class:'icon'}, '⌕'),
@@ -2443,7 +2454,7 @@ function renderSettingsModal(){
   const nameInput = el('input',{type:'text', value:appName, maxlength:'40', placeholder:'App name'});
 
   const modal = el('div',{class:'modal settings-modal'},
-    el('h2',{}, '⚙ Settings'),
+    el('div',{class:'settings-page-head'}, el('h2',{}, '⚙ Settings'), el('button',{class:'settings-action-btn', onclick:()=>{ state.settingsOpen=false; render(); }}, '← Back to app')),
 
     el('div',{class:'settings-section'},
       el('div',{class:'settings-section-title'}, 'App Name'),
@@ -2537,6 +2548,13 @@ function renderSettingsModal(){
     )
   );
   return el('div',{class:'overlay', onclick:(e)=>{ if(e.target.classList.contains('overlay')){ state.settingsOpen=false; render(); } }}, modal);
+}
+
+// Settings now fills the page as a grid of cards instead of a small pop-up window.
+function renderSettingsPage(){
+  const modal = renderSettingsModal().firstChild;
+  modal.classList.add('settings-page');
+  return modal;
 }
 
 function renderPlotPopover(){
@@ -3360,6 +3378,26 @@ function renderCategoryProgress(){
 }
 
 function renderWeekView(){
+  // Two columns on wide screens: the sidebar on the left, and one working column on the right
+  // (summary, quick-add, priorities, today, then the week's list), so less scrolling is needed.
+  const placement = state.meta.calendarPlacement || 'sidebar';
+  const wrap = el('div',{});
+  if(placement==='top'){ wrap.appendChild(renderCalendarWidget()); }
+  const layout = el('div',{class:'layout'});
+  layout.appendChild(renderSidebar());
+  const stack = el('div',{class:'week-main'});
+  stack.appendChild(renderDashboardStrip());
+  stack.appendChild(renderQuickAddBar());
+  const priorityPanel = renderPriorityPanel();
+  if(priorityPanel){ stack.appendChild(priorityPanel); }
+  stack.appendChild(renderTodayPanel());
+  stack.appendChild(renderMain());
+  layout.appendChild(stack);
+  wrap.appendChild(layout);
+  return wrap;
+}
+
+function renderWeekViewLegacy(){
   const placement = state.meta.calendarPlacement || 'sidebar';
   const wrap = el('div',{});
   if(placement==='top'){
