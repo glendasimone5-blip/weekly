@@ -4,10 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Weekly — Task Console</title>
-<meta name="app-version" content="2026-10-15a">
+<meta name="app-version" content="2026-10-16a">
 <meta name="push-server" content="https://weekly-push.glendasimone5.workers.dev">
 <meta name="vapid-public" content="BC-oohRYdwdxzqXouwUBrQaCByRvzuUjy8b4DJceMHyCqO3XHOEfJklA7L0F82DayZs8B2XPIiYBkvV8MpSXRt8">
-<meta name="app-notes" content="Reminder popups, period heads-up, start and end check-ins, reminders that work when the app is closed, a wider layout, a full-page Settings, event end times, editing completed tasks, a new weekly balance view, backup and restore, and a New Task button that opens the full form.">
+<meta name="app-notes" content="Reminder popups, period heads-up, start and end check-ins, reminders that work when the app is closed, a wider layout, a full-page Settings, reminders set relative to the event (like 10 minutes before), add-on-selected-day, a Today button and titles in the calendar, event end times, editing completed tasks, a new weekly balance view, backup and restore, and a New Task button that opens the full form.">
 <script>
   // Runs before anything else in <head>, including the external libraries
   // below (which block parsing while they load) — otherwise the theme
@@ -786,6 +786,19 @@
   .settings-page-head h2{ margin:0; }
   .settings-page .settings-section, .settings-page .settings-section:last-of-type{ background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:18px; margin:0; }
   .settings-page .modal-actions{ display:none; }
+  .calendar-today-btn{ background:var(--surface-2); border:1px solid var(--border); color:var(--accent); border-radius:6px; font-family:var(--mono); font-size:11px; font-weight:700; padding:0 9px; height:24px; }
+  .calendar-header .calendar-today-btn{ width:auto; color:var(--accent); font-size:11px; }
+  .cal-chips{ width:100%; display:flex; flex-direction:column; gap:2px; margin-top:4px; }
+  .cal-chip{ font-size:10.5px; line-height:1.35; color:var(--text-dim); background:var(--surface-2); border-left:3px solid var(--text-faint); border-radius:3px; padding:1px 5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .cal-chip.ev{ font-weight:600; color:var(--text); }
+  .cal-chip.done{ text-decoration:line-through; opacity:0.6; }
+  .cal-chip-more{ font-family:var(--mono); font-size:10px; color:var(--text-faint); padding-left:4px; }
+  .big-calendar-cell{ min-height:96px; }
+  @media (min-width:761px){ .big-calendar-cell .calendar-dots{ display:none; } }
+  @media (max-width:760px){ .cal-chips{ display:none; } }
+  .lead-chips{ display:flex; flex-wrap:wrap; gap:6px; }
+  .lead-chip{ background:var(--surface-2); border:1px solid var(--border); color:var(--text-dim); border-radius:999px; padding:5px 11px; font-size:12px; }
+  .lead-chip.active{ background:var(--accent); border-color:var(--accent); color:var(--on-accent); font-weight:700; }
   .fine{ text-align:center; color:var(--text-faint); font-size:11.5px; margin-top:30px; font-family:var(--mono); }
 
   /* ---------- Celebration: animation, toast, streak badge ---------- */
@@ -1433,7 +1446,7 @@ function generateSeriesOccurrences(seed, seriesId, fromDateStr){
     if(next > horizonEnd) break;
     created.push({
       id: genId(), type: seed.type || 'task', title: seed.title, category: seed.category, dueDate: next,
-      time: seed.time || '', remindTime: seed.remindTime || '', endTime: seed.endTime || '', notes: seed.notes || '', recurrence: seed.recurrence, seriesId,
+      time: seed.time || '', remindTime: seed.remindTime || '', endTime: seed.endTime || '', leadReminders: Array.isArray(seed.leadReminders) ? seed.leadReminders.slice() : [], notes: seed.notes || '', recurrence: seed.recurrence, seriesId,
       priority: seed.type==='event' ? false : !!seed.priority, subtasks: [],
       completed: false, completedAt: null, createdAt: todayStr()
     });
@@ -1506,6 +1519,7 @@ async function addTask(data){
     time: data.time || '',
     remindTime: data.remindTime || '',
     endTime: data.endTime || '',
+    leadReminders: Array.isArray(data.leadReminders) ? data.leadReminders : [],
     notes: data.notes || '',
     recurrence,
     seriesId: recurrence!=='none' ? id : null,
@@ -1536,7 +1550,7 @@ async function duplicateTask(id){
 
   const clone = {
     id: genId(),
-    type: orig.type || 'task', time: orig.time || '', endTime: orig.endTime || '', remindTime: orig.remindTime || '', priority: !!orig.priority,
+    type: orig.type || 'task', time: orig.time || '', endTime: orig.endTime || '', leadReminders: Array.isArray(orig.leadReminders) ? orig.leadReminders.slice() : [], remindTime: orig.remindTime || '', priority: !!orig.priority,
     subtasks: (orig.subtasks || []).map(s=>({ id: genId(), title: s.title, completed: false })),
     title: orig.title,
     category: orig.category,
@@ -1824,6 +1838,36 @@ const REMINDER_WINDOW_MIN = 120; // a reminder missed by more than this is skipp
 function checkTaskReminders(){
   // Never rebuild the DOM under an open form; it would wipe what's being typed.
   if(!state.loaded || state.modalOpen || state.settingsOpen || state.editingAppName) return;
+  const nowMs = Date.now();
+  const fired = state.meta.firedInstants || (state.meta.firedInstants = {});
+  Object.keys(fired).forEach(k=>{ if(nowMs - fired[k] > 3*86400000) delete fired[k]; });
+  let changed = false;
+  state.tasks.forEach(t=>{
+    if(t.completed) return;
+    if(snoozeUntil[t.id]){
+      if(nowMs >= snoozeUntil[t.id]){ delete snoozeUntil[t.id]; reminderPopups.push({ id:t.id }); changed = true; }
+      return;
+    }
+    if(reminderPopups.some(p=>p.id===t.id)) return;
+    let show = false;
+    reminderInstants(t).forEach(inst=>{
+      const key = t.id+'@'+inst.at, diff = (nowMs - inst.at) / 60000;
+      if(fired[key] || diff < 0 || diff > REMINDER_WINDOW_MIN) return;
+      fired[key] = nowMs; show = true;
+    });
+    if(!show) return;
+    changed = true;
+    reminderPopups.push({ id:t.id });
+    if(typeof Notification !== 'undefined' && Notification.permission === 'granted'){
+      try{ new Notification((state.meta.appName||'Weekly')+' — Reminder', { body: t.title }); }catch(e){}
+    }
+  });
+  if(changed){ saveMeta(); playNotificationSound(); render(); }
+}
+
+function checkTaskRemindersLegacy(){
+  // Never rebuild the DOM under an open form; it would wipe what's being typed.
+  if(!state.loaded || state.modalOpen || state.settingsOpen || state.editingAppName) return;
   const today = todayStr();
   const fired = state.meta.firedReminders || (state.meta.firedReminders = {});
   Object.keys(fired).forEach(k=>{ if(!k.endsWith('|'+today)) delete fired[k]; });
@@ -1858,7 +1902,7 @@ function renderReminderPopups(){
     if(!t) return;
     const close = ()=>{ reminderPopups = reminderPopups.filter(x=>x.id!==p.id); };
     wrap.appendChild(el('div',{class:'reminder-popup'},
-      el('div',{class:'reminder-popup-label'}, (t.type==='event' ? '📌 Event' : '🔔 Reminder')+' · '+formatTime12h(t.remindTime)),
+      el('div',{class:'reminder-popup-label'}, (t.type==='event' ? '📌 Event' : '🔔 Reminder')+' · '+reminderLabel(t)),
       el('div',{class:'reminder-popup-title'}, t.title),
       el('div',{class:'reminder-popup-actions'},
         t.type==='event' ? null : el('button',{class:'reminder-done-btn', onclick:()=>{ close(); toggleTask(t.id); }}, '✓ Done'),
@@ -2808,6 +2852,18 @@ function pushMessage(text){
 function buildReminderItems(){
   const now = Date.now(), horizon = now + PUSH_WINDOW_DAYS*86400000, items = [];
   state.tasks.forEach(t=>{
+    if(t.completed) return;
+    reminderInstants(t).forEach(inst=>{
+      if(inst.at <= now || inst.at > horizon) return;
+      items.push({ rid: t.id+'@'+inst.at, at: inst.at, title: t.title, body: t.type==='event' ? 'Event reminder' : 'Task reminder' });
+    });
+  });
+  if(pushTest && pushTest.at > Date.now()) items.push(pushTest);
+  return items.sort((a,b)=>a.at-b.at).slice(0,300);
+}
+function buildReminderItemsLegacy(){
+  const now = Date.now(), horizon = now + PUSH_WINDOW_DAYS*86400000, items = [];
+  state.tasks.forEach(t=>{
     if(!t.remindTime || t.completed) return;
     const [y,m,d] = t.dueDate.split('-').map(Number), [hh,mm] = t.remindTime.split(':').map(Number);
     const at = new Date(y, m-1, d, hh, mm).getTime();
@@ -2994,6 +3050,28 @@ function renderPeriodHistory(){
 }
 
 function renderBigCalendar(){
+  // Adds day titles (wide screens), and a Today button once you've moved away from today.
+  const w = renderBigCalendarLegacy();
+  const dates = calendarGridDates(state.calendarMonthOffset);
+  w.querySelectorAll('.big-calendar-cell').forEach((cell, i)=>{
+    const items = state.tasks.filter(t=>t.dueDate===fmt(dates[i])).sort(compareDayItems);
+    if(!items.length) return;
+    const chips = el('div',{class:'cal-chips'});
+    items.slice(0,3).forEach(t=>{
+      chips.appendChild(el('div',{class:'cal-chip'+(t.type==='event'?' ev':'')+(t.completed?' done':''), style:'border-left-color:'+catColor(t.category), title:t.title},
+        (t.time ? shortTime(t.time)+' ' : '') + t.title));
+    });
+    if(items.length > 3) chips.appendChild(el('div',{class:'cal-chip-more'}, '+'+(items.length-3)+' more'));
+    cell.appendChild(chips);
+  });
+  const label = w.querySelector('.calendar-header .calendar-month-label');
+  if(label && (state.calendarMonthOffset !== 0 || (state.calendarSelectedDate && state.calendarSelectedDate !== todayStr()))){
+    label.after(el('button',{class:'calendar-today-btn', title:'Jump to today', onclick:()=>{ state.calendarMonthOffset = 0; state.calendarSelectedDate = todayStr(); render(); }}, 'Today'));
+  }
+  return w;
+}
+
+function renderBigCalendarLegacy(){
   const offset = state.calendarMonthOffset;
   const dates = calendarGridDates(offset);
   const monthName = monthDate(offset).toLocaleDateString('en-US',{month:'long', year:'numeric'});
@@ -3056,6 +3134,7 @@ function renderCalendarSidePanel(){
   const label = parseDate(ds).toLocaleDateString('en-US',{weekday:'long', month:'long', day:'numeric', year:'numeric'});
   const panel = el('div',{class:'calendar-side-panel'});
   panel.appendChild(el('div',{class:'calendar-side-heading'}, label));
+  panel.appendChild(el('button',{class:'settings-action-btn', style:'margin:0 0 12px;', onclick:()=>{ state.calendarSelectedDate = ds; state.editingTask = null; state.modalOpen = true; render(); }}, '+ Add on this day'));
 
   const mode = state.period.mode;
   if(state.period.enabled && mode==='cycle'){
@@ -3077,7 +3156,7 @@ function renderCalendarSidePanel(){
   }
 
   panel.appendChild(el('div',{class:'calendar-side-tasks-title'}, 'Tasks'));
-  const dayTasks = state.tasks.filter(t=>t.dueDate===ds);
+  const dayTasks = state.tasks.filter(t=>t.dueDate===ds).sort(compareDayItems);
   if(!dayTasks.length){
     panel.appendChild(el('div',{class:'empty'}, 'Nothing due this day.'));
   } else {
@@ -3095,6 +3174,15 @@ function renderCalendarTabView(){
 }
 
 function renderCalendarWidget(){
+  const w = renderCalendarWidgetLegacy();
+  const right = w.querySelector('.calendar-header-right');
+  if(right && state.calendarMonthOffset !== 0){
+    right.insertBefore(el('button',{class:'calendar-today-btn', title:'Back to this month', onclick:()=>{ state.calendarMonthOffset = 0; render(); }}, 'Today'), right.firstChild);
+  }
+  return w;
+}
+
+function renderCalendarWidgetLegacy(){
   const offset = state.calendarMonthOffset;
   const dates = calendarGridDates(offset);
   const monthName = monthDate(offset).toLocaleDateString('en-US',{month:'short', year:'numeric'});
@@ -3472,7 +3560,7 @@ function renderMain(){
       main.appendChild(el('div',{class:'empty'}, 'Nothing due ', el('b',{},label), '.'));
       return main;
     }
-    dayTasks.sort((a,b)=>a.title.localeCompare(b.title)).forEach(t=>main.appendChild(renderTask(t)));
+    dayTasks.sort(compareDayItems).forEach(t=>main.appendChild(renderTask(t)));
     return main;
   }
 
@@ -3527,6 +3615,52 @@ function formatTimeRange(t){
   return (s.slice(-2) === e.slice(-2) ? s.slice(0,-3) : s) + '–' + e;
 }
 
+function shortTime(tm){
+  const [h,m] = tm.split(':').map(Number), p = h>=12 ? 'p' : 'a', h12 = h%12===0 ? 12 : h%12;
+  return m ? h12+':'+String(m).padStart(2,'0')+p : h12+p;
+}
+// Timed items first (by time), then the rest; finished items sink.
+function compareDayItems(a, b){
+  const ta = a.time || a.remindTime || '', tb = b.time || b.remindTime || '';
+  if(ta && tb) return ta.localeCompare(tb) || a.title.localeCompare(b.title);
+  if(ta) return -1;
+  if(tb) return 1;
+  return (a.completed?1:0)-(b.completed?1:0) || a.title.localeCompare(b.title);
+}
+
+/* ---- Reminders relative to the item (like a calendar app) ---- */
+function atLocal(dateStr, timeStr){
+  const [y,m,d] = dateStr.split('-').map(Number), [h,mi] = timeStr.split(':').map(Number);
+  return new Date(y, m-1, d, h, mi).getTime();
+}
+// Every moment this item should alert: an optional fixed clock time, plus any "N minutes before".
+// Timed events count back from their start; everything else counts back from its set time or 9:00 AM.
+function reminderInstants(t){
+  const out = [];
+  if(t.remindTime) out.push({ at: atLocal(t.dueDate, t.remindTime) });
+  const leads = Array.isArray(t.leadReminders) ? t.leadReminders : [];
+  if(leads.length){
+    const clock = (t.type==='event' && t.time) ? t.time : (t.type!=='event' && t.remindTime) ? t.remindTime : (state.meta.allDayRemindTime || '09:00');
+    const anchor = atLocal(t.dueDate, clock);
+    leads.forEach(m=>{ if(typeof m==='number' && m>=0) out.push({ at: anchor - m*60000, minutes:m }); });
+  }
+  const seen = {};
+  return out.filter(o=>{ if(seen[o.at]) return false; seen[o.at] = 1; return true; });
+}
+function leadShort(m){ return ({0:'at start',5:'5m',10:'10m',15:'15m',30:'30m',60:'1h',120:'2h',1440:'1d',2880:'2d',10080:'1w'})[m] || (m+'m'); }
+function reminderLabel(t){
+  if(t.type==='event' && t.time) return formatTimeRange(t);
+  if(t.remindTime) return formatTime12h(t.remindTime);
+  return 'Today';
+}
+function reminderBadge(t){
+  if(t.completed) return null;
+  const parts = [];
+  if(t.remindTime) parts.push(formatTime12h(t.remindTime));
+  (Array.isArray(t.leadReminders) ? t.leadReminders : []).slice().sort((a,b)=>a-b).forEach(m=>parts.push(leadShort(m)));
+  return parts.length ? el('span',{class:'badge cat', title:'Reminders set'}, '🔔 '+parts.join(' · ')) : null;
+}
+
 function renderTask(t){
   const isEvent = t.type==='event';
   const overdue = isOverdue(t);
@@ -3551,7 +3685,7 @@ function renderTask(t){
         el('span',{class:'badge '+(isEvent?'event':(overdue?'overdue':'due'))}, (isEvent?'':(overdue?'Overdue · ':'Due '))+dateLabel),
         el('span',{class:'badge cat'}, t.category),
         (t.recurrence && t.recurrence!=='none') ? el('span',{class:'badge recur'}, '↻ '+RECUR_LABEL[t.recurrence]) : null,
-        (t.remindTime && !t.completed) ? el('span',{class:'badge cat', title:'Reminder set'}, '🔔 '+formatTime12h(t.remindTime)) : null,
+        reminderBadge(t),
         hasSubtasks ? el('button',{class:'badge subtask-toggle', onclick:()=>toggleSubtaskExpanded(t.id)}, (isExpanded?'▾ ':'▸ ')+subtaskDoneCount+'/'+t.subtasks.length) : null
       ),
       t.notes ? el('div',{class:'notes'}, t.notes) : null,
@@ -3847,12 +3981,27 @@ function renderModal(){
 
   const titleInput = el('input',{type:'text', value: editing?editing.title:takePrefill(), placeholder: currentType==='event' ? 'Event title' : 'Task title'});
   const catSelect = el('select',{}, state.categories.map(c=>el('option',{value:c, ...(editing&&editing.category===c?{selected:'selected'}:{})}, c)));
-  const datePicker = createDatePicker(editing?editing.dueDate:todayStr());
+  const datePicker = createDatePicker(editing?editing.dueDate:(state.calendarSelectedDate || todayStr()));
   const completedPicker = (editing && editing.completed && editing.completedAt) ? createDatePicker(editing.completedAt) : null;
   const timeInput = el('input',{type:'time', value: (editing&&editing.time)?editing.time:''});
   const remindInput = el('input',{type:'time', value: (editing&&editing.remindTime)?editing.remindTime:''});
   const endInput = el('input',{type:'time', value: (editing&&editing.endTime)?editing.endTime:''});
   const endError = el('div',{class:'settings-hint', style:'color:var(--danger); display:none; margin-top:5px;'});
+  let leadSel = (editing && Array.isArray(editing.leadReminders)) ? editing.leadReminders.slice() : [];
+  const leadWrap = el('div',{class:'lead-chips'});
+  const LEAD_TIMED = [[0,'At start'],[5,'5 min'],[10,'10 min'],[15,'15 min'],[30,'30 min'],[60,'1 hour'],[120,'2 hours'],[1440,'1 day']];
+  const LEAD_DAY = [[0,'On the day'],[1440,'1 day before'],[2880,'2 days before'],[10080,'1 week before']];
+  function leadOptions(){ return (currentType==='event' && timeInput.value) ? LEAD_TIMED : LEAD_DAY; }
+  function renderLeadChips(){
+    leadWrap.innerHTML = '';
+    leadOptions().forEach(([m, label])=>{
+      const on = leadSel.includes(m);
+      leadWrap.appendChild(el('button',{type:'button', class:'lead-chip'+(on?' active':''), onclick:()=>{ leadSel = on ? leadSel.filter(x=>x!==m) : leadSel.concat([m]); renderLeadChips(); }}, label));
+    });
+  }
+  function leadSelection(){ const valid = leadOptions().map(o=>o[0]); return leadSel.filter(m=>valid.includes(m)).sort((a,b)=>a-b); }
+  renderLeadChips();
+  timeInput.addEventListener('input', renderLeadChips);
   const notesInput = el('textarea',{placeholder:'Notes (optional)'}, editing?editing.notes:'');
   const recurOptions = [['none','Does not repeat'],['daily','Daily'],['weekly','Weekly'],['monthly','Monthly'],['yearly','Yearly — birthdays, anniversaries']];
   const recurSelect = el('select',{}, recurOptions.map(([val,label])=>el('option',{value:val, ...((editing?editing.recurrence:'none')===val?{selected:'selected'}:{})}, label)));
@@ -3873,7 +4022,7 @@ function renderModal(){
     }
     const data = {
       type: currentType, title:titleInput.value.trim(), category:catSelect.value, dueDate:datePicker.getValue(),
-      time: currentType==='event' ? timeInput.value : '', endTime: currentType==='event' ? endInput.value : '', remindTime: remindInput.value, notes:notesInput.value.trim(), recurrence:recurSelect.value,
+      time: currentType==='event' ? timeInput.value : '', endTime: currentType==='event' ? endInput.value : '', remindTime: remindInput.value, leadReminders: leadSelection(), notes:notesInput.value.trim(), recurrence:recurSelect.value,
       ...(completedPicker ? { completedAt: completedPicker.getValue() } : {}),
       priority: currentType==='event' ? false : priorityCheckbox.checked,
       subtasks: currentType==='event' ? [] : subtaskEditor.getValue()
@@ -3892,6 +4041,7 @@ function renderModal(){
     priorityFieldWrap.style.display = currentType==='event' ? 'none' : '';
     subtaskFieldWrap.style.display = currentType==='event' ? 'none' : '';
     dateLabel.textContent = currentType==='event' ? 'Date' : 'Due Date';
+    renderLeadChips();
     heading.textContent = editing ? (currentType==='event'?'Edit Event':'Edit Task') : (currentType==='event'?'New Event':'New Task');
     submitBtn.textContent = editing ? 'Save Changes' : (currentType==='event' ? 'Add Event' : 'Add Task');
   }
@@ -3907,8 +4057,9 @@ function renderModal(){
     el('div',{class:'field', style:'position:relative;'}, dateLabel, datePicker.el),
     completedPicker ? el('div',{class:'field', style:'position:relative;'}, el('label',{},'Completed on'), completedPicker.el) : null,
     timeFieldWrap,
-    el('div',{class:'field'}, el('label',{},'Remind me at (optional)'), remindInput,
+    el('div',{class:'field'}, el('label',{},'Remind me at a set time (optional)'), remindInput,
       el('div',{class:'settings-hint', style:'margin-top:5px;'}, 'Pops up with a sound on the due date while this tab is open.')),
+    el('div',{class:'field'}, el('label',{},'Remind me before (optional)'), leadWrap, el('div',{class:'settings-hint', style:'margin-top:5px;'}, 'All-day items remind at 9:00 AM, or at the set time above.')),
     el('div',{class:'field'}, el('label',{},'Repeats'), recurSelect),
     el('div',{class:'field'}, el('label',{},'Notes'), notesInput),
     subtaskFieldWrap,
