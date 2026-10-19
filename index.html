@@ -4,10 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Weekly — Task Console</title>
-<meta name="app-version" content="2026-10-16a">
+<meta name="app-version" content="2026-10-17a">
 <meta name="push-server" content="https://weekly-push.glendasimone5.workers.dev">
 <meta name="vapid-public" content="BC-oohRYdwdxzqXouwUBrQaCByRvzuUjy8b4DJceMHyCqO3XHOEfJklA7L0F82DayZs8B2XPIiYBkvV8MpSXRt8">
-<meta name="app-notes" content="Reminder popups, period heads-up, start and end check-ins, reminders that work when the app is closed, a wider layout, a full-page Settings, reminders set relative to the event (like 10 minutes before), add-on-selected-day, a Today button and titles in the calendar, event end times, editing completed tasks, a new weekly balance view, backup and restore, and a New Task button that opens the full form.">
+<meta name="app-notes" content="Reminder popups, period heads-up, start and end check-ins, reminders that work when the app is closed, a wider layout, a full-page Settings, reminders set relative to the event (like 10 minutes before), add-on-selected-day, a Today button and titles in the calendar, editing repeating items (this one, this and following, all), flexible repeats (every N, chosen weekdays, an end date), event end times, editing completed tasks, a new weekly balance view, backup and restore, and a New Task button that opens the full form.">
 <script>
   // Runs before anything else in <head>, including the external libraries
   // below (which block parsing while they load) — otherwise the theme
@@ -799,6 +799,8 @@
   .lead-chips{ display:flex; flex-wrap:wrap; gap:6px; }
   .lead-chip{ background:var(--surface-2); border:1px solid var(--border); color:var(--text-dim); border-radius:999px; padding:5px 11px; font-size:12px; }
   .lead-chip.active{ background:var(--accent); border-color:var(--accent); color:var(--on-accent); font-weight:700; }
+  .repeat-rule{ margin-top:10px; padding:10px 12px; background:var(--surface-2); border:1px solid var(--border); border-radius:8px; }
+  .repeat-rule select{ width:100%; }
   .fine{ text-align:center; color:var(--text-faint); font-size:11.5px; margin-top:30px; font-family:var(--mono); }
 
   /* ---------- Celebration: animation, toast, streak badge ---------- */
@@ -1429,7 +1431,53 @@ const RECUR_MAX_GEN = 60;      // safety cap per generation pass
 // next one can never fall inside it. Yearly's 365-day gap alone exceeds the
 // standard 90-day horizon, so a yearly task would generate once and then
 // never generate again — exactly wrong for something like a birthday.
-function horizonDaysFor(recurrence){
+function nextOccurrenceDate(dateStr, t){
+  // The next date a repeating item lands on, honouring "every N" and chosen weekdays.
+  const n = Math.max(1, t.repeatEvery || 1), rec = t.recurrence, d = parseDate(dateStr);
+  if(rec === 'daily'){ d.setDate(d.getDate() + n); return fmt(d); }
+  if(rec === 'weekly'){
+    const days = Array.isArray(t.repeatDays) ? t.repeatDays : [];
+    if(!days.length){ d.setDate(d.getDate() + 7*n); return fmt(d); }
+    const weekStart = (x)=>{ const y = new Date(x); y.setDate(y.getDate() - ((y.getDay()+6)%7)); y.setHours(0,0,0,0); return y.getTime(); };
+    const a0 = weekStart(parseDate(t.repeatAnchor || dateStr));
+    for(let i=0; i < 14*n + 7; i++){
+      d.setDate(d.getDate() + 1);
+      const wk = Math.round((weekStart(d) - a0) / (7*DAY_MS));
+      if(wk % n === 0 && days.includes((d.getDay()+6)%7)) return fmt(d);
+    }
+    return fmt(d);
+  }
+  const src = t.repeatAnchor ? parseDate(t.repeatAnchor) : d;       // keeps "the 31st" meaning the 31st
+  if(rec === 'monthly'){
+    const y = d.getFullYear(), m = d.getMonth() + n, last = new Date(y, m+1, 0).getDate();
+    return fmt(new Date(y, m, Math.min(src.getDate(), last)));
+  }
+  if(rec === 'yearly'){
+    const y = d.getFullYear() + n, m = src.getMonth(), last = new Date(y, m+1, 0).getDate();
+    return fmt(new Date(y, m, Math.min(src.getDate(), last)));
+  }
+  return nextDueDate(dateStr, rec);
+}
+
+function repeatLabel(t){
+  const n = t.repeatEvery || 1, rec = t.recurrence;
+  const unit = { daily:'day', weekly:'week', monthly:'month', yearly:'year' }[rec] || rec;
+  let s = n === 1 ? RECUR_LABEL[rec] : 'Every ' + n + ' ' + unit + 's';
+  if(rec === 'weekly' && Array.isArray(t.repeatDays) && t.repeatDays.length){
+    s += ' · ' + t.repeatDays.map(i=>['Mon','Tue','Wed','Thu','Fri','Sat','Sun'][i]).join(', ');
+  }
+  if(t.repeatUntil) s += ' · until ' + niceDate(t.repeatUntil);
+  return s;
+}
+
+function horizonDaysFor(t){
+  // Must exceed the gap between occurrences or the next one can never fall inside the window.
+  const rec = (t && t.recurrence) || t, n = (t && t.repeatEvery) || 1;
+  const gap = { daily:1, weekly:7, monthly:31, yearly:366 }[rec] || 1;
+  return Math.max(RECUR_HORIZON_DAYS, gap*n + 35);
+}
+
+function horizonDaysForLegacy(recurrence){
   return recurrence==='yearly' ? 400 : RECUR_HORIZON_DAYS;
 }
 
@@ -1437,16 +1485,18 @@ function horizonDaysFor(recurrence){
 // AFTER fromDateStr, up to the rolling horizon. Returns the new task records
 // (not yet pushed into state.tasks).
 function generateSeriesOccurrences(seed, seriesId, fromDateStr){
-  const horizonEnd = fmt(new Date(Date.now() + horizonDaysFor(seed.recurrence)*DAY_MS));
+  const horizonEnd = fmt(new Date(Date.now() + horizonDaysFor(seed)*DAY_MS));
   const created = [];
   let cursor = fromDateStr;
   let guard = 0;
   while(guard < RECUR_MAX_GEN){
-    const next = nextDueDate(cursor, seed.recurrence);
+    const next = nextOccurrenceDate(cursor, seed);
+    if(seed.repeatUntil && next > seed.repeatUntil) break;
+    if(((state.meta.seriesSkips || {})[seriesId] || []).includes(next)){ cursor = next; guard++; continue; }
     if(next > horizonEnd) break;
     created.push({
       id: genId(), type: seed.type || 'task', title: seed.title, category: seed.category, dueDate: next,
-      time: seed.time || '', remindTime: seed.remindTime || '', endTime: seed.endTime || '', leadReminders: Array.isArray(seed.leadReminders) ? seed.leadReminders.slice() : [], notes: seed.notes || '', recurrence: seed.recurrence, seriesId,
+      time: seed.time || '', remindTime: seed.remindTime || '', endTime: seed.endTime || '', leadReminders: Array.isArray(seed.leadReminders) ? seed.leadReminders.slice() : [], notes: seed.notes || '', recurrence: seed.recurrence, seriesId, repeatEvery: seed.repeatEvery || 1, repeatDays: Array.isArray(seed.repeatDays) ? seed.repeatDays.slice() : [], repeatUntil: seed.repeatUntil || '', repeatAnchor: seed.repeatAnchor || seed.dueDate,
       priority: seed.type==='event' ? false : !!seed.priority, subtasks: [],
       completed: false, completedAt: null, createdAt: todayStr()
     });
@@ -1467,7 +1517,7 @@ function topUpAllSeries(){
     const items = seriesMap[sid];
     const maxDue = items.reduce((m,t)=> t.dueDate>m?t.dueDate:m, items[0].dueDate);
     const seed = items[items.length-1];
-    const horizonEnd = fmt(new Date(Date.now() + horizonDaysFor(seed.recurrence)*DAY_MS));
+    const horizonEnd = fmt(new Date(Date.now() + horizonDaysFor(seed)*DAY_MS));
     if(maxDue < horizonEnd){
       const more = generateSeriesOccurrences(seed, sid, maxDue);
       if(more.length){ state.tasks.push(...more); changed = true; }
@@ -1520,6 +1570,7 @@ async function addTask(data){
     remindTime: data.remindTime || '',
     endTime: data.endTime || '',
     leadReminders: Array.isArray(data.leadReminders) ? data.leadReminders : [],
+    repeatEvery: data.repeatEvery || 1, repeatDays: Array.isArray(data.repeatDays) ? data.repeatDays : [], repeatUntil: data.repeatUntil || '', repeatAnchor: recurrence!=='none' ? data.dueDate : '',
     notes: data.notes || '',
     recurrence,
     seriesId: recurrence!=='none' ? id : null,
@@ -2326,6 +2377,7 @@ function render(){
 
   if(state.toast){ app.appendChild(el('div',{class:'toast'}, state.toast.text)); }
 
+  if(state.scopeDialog){ app.appendChild(renderScopeDialog()); }
   if(reminderPopups.length){ app.appendChild(renderReminderPopups()); }
   if(state.modalOpen){ app.appendChild(renderModal()); }
   if(state.showWrappedIntro){ app.appendChild(renderWrappedModal()); }
@@ -3661,6 +3713,104 @@ function reminderBadge(t){
   return parts.length ? el('span',{class:'badge cat', title:'Reminders set'}, '🔔 '+parts.join(' · ')) : null;
 }
 
+/* ---- Editing and deleting repeating items: this one / this and following / all ---- */
+const SERIES_FIELDS = ['title','category','notes','time','endTime','remindTime','leadReminders','priority'];
+function isSeriesItem(t){ return !!(t && t.seriesId && t.recurrence && t.recurrence !== 'none' && !t.completed); }
+function dayBefore(dateStr){ const d = parseDate(dateStr); d.setDate(d.getDate()-1); return fmt(d); }
+function requestEdit(t){
+  state.editScope = null;
+  if(isSeriesItem(t)){ state.scopeDialog = { kind:'edit', id:t.id }; render(); return; }
+  state.editingTask = t; state.modalOpen = true; render();
+}
+function requestDelete(t){
+  if(isSeriesItem(t)){ state.scopeDialog = { kind:'delete', id:t.id }; render(); return; }
+  if(confirm('Delete this task?')) deleteTask(t.id);
+}
+function copySeriesFields(target, data){
+  SERIES_FIELDS.forEach(k=>{ if(data[k] !== undefined) target[k] = Array.isArray(data[k]) ? data[k].slice() : data[k]; });
+}
+async function saveEdit(editing, data){
+  const scope = isSeriesItem(editing) ? state.editScope : null;
+  state.editScope = null;
+  if(!scope){
+    if(data.recurrence && data.recurrence !== 'none') data.repeatAnchor = data.dueDate;
+    return updateTask(editing.id, data);
+  }
+  const t = state.tasks.find(x=>x.id===editing.id);
+  const series = state.tasks.filter(x=>x.seriesId===editing.seriesId);
+  if(scope === 'this'){
+    copySeriesFields(t, data);
+    t.subtasks = data.subtasks || [];
+    if(data.dueDate) t.dueDate = data.dueDate;
+  } else if(scope === 'all'){
+    series.forEach(x=>copySeriesFields(x, data));
+    t.subtasks = data.subtasks || [];
+  } else {
+    const later = series.filter(x=>x.id!==t.id && !x.completed && x.dueDate > t.dueDate);
+    const ruleChanged = data.recurrence !== t.recurrence || (data.repeatEvery||1) !== (t.repeatEvery||1)
+      || JSON.stringify(data.repeatDays||[]) !== JSON.stringify(t.repeatDays||[]) || (data.repeatUntil||'') !== (t.repeatUntil||'') || data.dueDate !== t.dueDate;
+    if(!ruleChanged){
+      later.forEach(x=>copySeriesFields(x, data));
+      copySeriesFields(t, data);
+      t.subtasks = data.subtasks || [];
+    } else {
+      // Split: everything before this point keeps the old pattern and ends the day before;
+      // this one and the ones after start a fresh series under the new pattern.
+      const cut = dayBefore(t.dueDate);
+      series.filter(x=>x.id!==t.id && !later.includes(x)).forEach(x=>{ x.repeatUntil = cut; });
+      state.tasks = state.tasks.filter(x=>!later.includes(x));
+      Object.assign(t, data);
+      if(t.recurrence === 'none'){ t.seriesId = null; t.repeatAnchor = ''; }
+      else{
+        t.seriesId = genId(); t.repeatAnchor = t.dueDate;
+        state.tasks.push(...generateSeriesOccurrences(t, t.seriesId, t.dueDate));
+      }
+    }
+  }
+  await saveTasks();
+  render();
+}
+async function applySeriesDelete(t, scope){
+  const sid = t.seriesId;
+  if(scope === 'this'){
+    const skips = state.meta.seriesSkips || (state.meta.seriesSkips = {});
+    (skips[sid] = skips[sid] || []).push(t.dueDate);          // so the rolling top-up never recreates it
+    state.tasks = state.tasks.filter(x=>x.id!==t.id);
+    saveMeta();
+  } else if(scope === 'all'){
+    state.tasks = state.tasks.filter(x=>!(x.seriesId===sid && !x.completed));      // finished ones stay in your history
+  } else {
+    const cut = dayBefore(t.dueDate);
+    state.tasks.filter(x=>x.seriesId===sid && (x.dueDate < t.dueDate || x.completed)).forEach(x=>{ x.repeatUntil = cut; });
+    state.tasks = state.tasks.filter(x=>!(x.seriesId===sid && !x.completed && x.dueDate >= t.dueDate));
+  }
+  await saveTasks();
+  render();
+}
+function renderScopeDialog(){
+  const d = state.scopeDialog, t = state.tasks.find(x=>x.id===d.id);
+  if(!t){ state.scopeDialog = null; return el('div',{}); }
+  const isDelete = d.kind === 'delete';
+  const pick = (scope)=>{
+    state.scopeDialog = null;
+    if(isDelete){ applySeriesDelete(t, scope); }
+    else{ state.editScope = scope; state.editingTask = t; state.modalOpen = true; render(); }
+  };
+  return el('div',{class:'overlay', onclick:(e)=>{ if(e.target.classList.contains('overlay')){ state.scopeDialog = null; render(); } }},
+    el('div',{class:'modal'},
+      el('h2',{}, (isDelete ? 'Delete' : 'Edit') + ' repeating item'),
+      el('div',{class:'settings-hint', style:'margin-bottom:12px;'}, '"' + t.title + '" repeats. Which ones?'),
+      el('div',{style:'display:flex; flex-direction:column; gap:8px;'},
+        el('button',{class:'quickadd-full-btn', onclick:()=>pick('this')}, 'This one only'),
+        el('button',{class:'quickadd-full-btn', onclick:()=>pick('following')}, 'This and following'),
+        el('button',{class:'quickadd-full-btn', onclick:()=>pick('all')}, 'All in the series')
+      ),
+      isDelete ? el('div',{class:'settings-hint', style:'margin-top:10px;'}, 'Ones you have already finished stay in your history.') : null,
+      el('div',{class:'modal-actions'}, el('button',{onclick:()=>{ state.scopeDialog = null; render(); }}, 'Cancel'))
+    )
+  );
+}
+
 function renderTask(t){
   const isEvent = t.type==='event';
   const overdue = isOverdue(t);
@@ -3684,7 +3834,7 @@ function renderTask(t){
       el('div',{class:'meta'},
         el('span',{class:'badge '+(isEvent?'event':(overdue?'overdue':'due'))}, (isEvent?'':(overdue?'Overdue · ':'Due '))+dateLabel),
         el('span',{class:'badge cat'}, t.category),
-        (t.recurrence && t.recurrence!=='none') ? el('span',{class:'badge recur'}, '↻ '+RECUR_LABEL[t.recurrence]) : null,
+        (t.recurrence && t.recurrence!=='none') ? el('span',{class:'badge recur', title:'Repeats'}, '↻ '+repeatLabel(t)) : null,
         reminderBadge(t),
         hasSubtasks ? el('button',{class:'badge subtask-toggle', onclick:()=>toggleSubtaskExpanded(t.id)}, (isExpanded?'▾ ':'▸ ')+subtaskDoneCount+'/'+t.subtasks.length) : null
       ),
@@ -3698,8 +3848,8 @@ function renderTask(t){
     ),
     el('div',{class:'task-actions'},
       el('button',{onclick:()=>{ duplicateTask(t.id); }, title:'Duplicate'}, '⧉'),
-      el('button',{onclick:()=>{ state.editingTask=t; state.modalOpen=true; render(); }, title:'Edit'}, '✎'),
-      el('button',{onclick:()=>{ if(confirm('Delete this task?')) deleteTask(t.id); }, title:'Delete'}, '✕')
+      el('button',{onclick:()=>{ requestEdit(t); }, title:'Edit'}, '✎'),
+      el('button',{onclick:()=>{ requestDelete(t); }, title:'Delete'}, '✕')
     )
   );
   return taskEl;
@@ -3822,14 +3972,14 @@ function renderCompletedTask(t, doneLabel){
       el('div',{class:'meta'},
         el('span',{class:'badge due'}, 'Completed '+doneLabel),
         el('span',{class:'badge cat'}, t.category),
-        (t.recurrence && t.recurrence!=='none') ? el('span',{class:'badge recur'}, '↻ '+RECUR_LABEL[t.recurrence]) : null
+        (t.recurrence && t.recurrence!=='none') ? el('span',{class:'badge recur', title:'Repeats'}, '↻ '+repeatLabel(t)) : null
       ),
       t.notes ? el('div',{class:'notes'}, t.notes) : null
     ),
     el('div',{class:'task-actions'},
       el('button',{onclick:()=>{ toggleTask(t.id); }, title:'Reopen: mark as not done'}, '↩'),
-      el('button',{onclick:()=>{ state.editingTask=t; state.modalOpen=true; render(); }, title:'Edit'}, '✎'),
-      el('button',{onclick:()=>{ if(confirm('Delete this task?')) deleteTask(t.id); }, title:'Delete'}, '✕')
+      el('button',{onclick:()=>{ requestEdit(t); }, title:'Edit'}, '✎'),
+      el('button',{onclick:()=>{ requestDelete(t); }, title:'Delete'}, '✕')
     )
   );
 }
@@ -4006,6 +4156,55 @@ function renderModal(){
   const recurOptions = [['none','Does not repeat'],['daily','Daily'],['weekly','Weekly'],['monthly','Monthly'],['yearly','Yearly — birthdays, anniversaries']];
   const recurSelect = el('select',{}, recurOptions.map(([val,label])=>el('option',{value:val, ...((editing?editing.recurrence:'none')===val?{selected:'selected'}:{})}, label)));
   const priorityCheckbox = el('input',{type:'checkbox', ...((editing&&editing.priority)?{checked:'checked'}:{})});
+  // ---- repeat rule: every N, weekdays, end ----
+  const scope = (editing && isSeriesItem(editing)) ? (state.editScope || null) : null;
+  const ruleLocked = !!scope && scope !== 'following';
+  if(ruleLocked){ recurSelect.disabled = true; }
+  const everyInput = el('input',{type:'number', min:'1', max:'30', value:String((editing && editing.repeatEvery) || 1), style:'width:72px;'});
+  const unitLabel = el('span',{style:'margin-left:8px; font-size:12.5px; color:var(--text-dim);'});
+  let repeatDays = (editing && Array.isArray(editing.repeatDays)) ? editing.repeatDays.slice() : [];
+  const dayChipsWrap = el('div',{class:'lead-chips', style:'margin-top:8px;'});
+  function renderDayChips(){
+    dayChipsWrap.innerHTML = '';
+    ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].forEach((nm, i)=>{
+      const on = repeatDays.includes(i);
+      dayChipsWrap.appendChild(el('button',{type:'button', class:'lead-chip'+(on?' active':''), onclick:()=>{ if(ruleLocked) return; repeatDays = on ? repeatDays.filter(x=>x!==i) : repeatDays.concat([i]); renderDayChips(); }}, nm));
+    });
+  }
+  const endModeSelect = el('select',{style:'margin-top:8px;'}, [['never','Never ends'],['date','Ends on a date'],['count','Ends after a number of times']].map(([v,l])=>el('option',{value:v}, l)));
+  endModeSelect.value = (editing && editing.repeatUntil) ? 'date' : 'never';
+  const endCountInput = el('input',{type:'number', min:'1', max:'400', value:'10', style:'width:90px;'});
+  const endCountWrap = el('div',{style:'margin-top:8px; font-size:12.5px; color:var(--text-dim);'}, 'After ', endCountInput, ' times');
+  const endDatePicker = createDatePicker((editing && editing.repeatUntil) || todayStr());
+  const endDateWrap = el('div',{class:'field', style:'margin-top:8px; position:relative;'}, endDatePicker.el);
+  const repeatError = el('div',{class:'settings-hint', style:'color:var(--danger); display:none; margin-top:5px;'});
+  const repeatRuleWrap = el('div',{class:'repeat-rule'}, el('div',{style:'font-size:12.5px; color:var(--text-dim);'}, 'Every ', everyInput, unitLabel), dayChipsWrap, endModeSelect, endCountWrap, endDateWrap);
+  function updateRepeatUI(){
+    const rec = recurSelect.value;
+    repeatRuleWrap.style.display = rec === 'none' ? 'none' : '';
+    unitLabel.textContent = ({ daily:'day(s)', weekly:'week(s)', monthly:'month(s)', yearly:'year(s)' })[rec] || '';
+    dayChipsWrap.style.display = rec === 'weekly' ? '' : 'none';
+    endCountWrap.style.display = endModeSelect.value === 'count' ? '' : 'none';
+    endDateWrap.style.display = endModeSelect.value === 'date' ? '' : 'none';
+  }
+  recurSelect.addEventListener('change', updateRepeatUI);
+  endModeSelect.addEventListener('change', updateRepeatUI);
+  renderDayChips(); updateRepeatUI();
+  if(ruleLocked){ everyInput.disabled = true; endModeSelect.disabled = true; endCountInput.disabled = true; }
+  function repeatRuleData(){
+    if(recurSelect.value === 'none') return { repeatEvery:1, repeatDays:[], repeatUntil:'' };
+    const every = Math.max(1, Math.min(30, parseInt(everyInput.value, 10) || 1));
+    const days = recurSelect.value === 'weekly' ? repeatDays.slice().sort((a,b)=>a-b) : [];
+    let until = '';
+    if(endModeSelect.value === 'date') until = endDatePicker.getValue();
+    if(endModeSelect.value === 'count'){
+      const start = datePicker.getValue(), rule = { recurrence:recurSelect.value, repeatEvery:every, repeatDays:days, repeatAnchor:start };
+      let cur = start;
+      for(let i=1; i < Math.max(1, Math.min(400, parseInt(endCountInput.value, 10) || 1)); i++){ cur = nextOccurrenceDate(cur, rule); }
+      until = cur;
+    }
+    return { repeatEvery:every, repeatDays:days, repeatUntil:until };
+  }
   const subtaskEditor = createSubtaskEditor(editing?editing.subtasks:[]);
 
   const heading = el('h2',{}, editing ? (currentType==='event'?'Edit Event':'Edit Task') : (currentType==='event'?'New Event':'New Task'));
@@ -4016,18 +4215,22 @@ function renderModal(){
   const subtaskFieldWrap = el('div',{class:'field', style: currentType==='event' ? 'display:none;' : ''}, el('label',{},'Subtasks'), subtaskEditor.el);
   const submitBtn = el('button',{class:'primary', onclick: async ()=>{
     if(!titleInput.value.trim()) return;
+    if(recurSelect.value !== 'none' && !ruleLocked){
+      const rr = repeatRuleData();
+      if(rr.repeatUntil && rr.repeatUntil < datePicker.getValue()){ repeatError.textContent = 'The end date must be on or after the start date.'; repeatError.style.display = ''; return; }
+    }
     if(currentType==='event' && endInput.value && (!timeInput.value || endInput.value <= timeInput.value)){
       endError.textContent = timeInput.value ? 'End time must be after the start time.' : 'Add a start time to use an end time.';
       endError.style.display = ''; return;
     }
     const data = {
       type: currentType, title:titleInput.value.trim(), category:catSelect.value, dueDate:datePicker.getValue(),
-      time: currentType==='event' ? timeInput.value : '', endTime: currentType==='event' ? endInput.value : '', remindTime: remindInput.value, leadReminders: leadSelection(), notes:notesInput.value.trim(), recurrence:recurSelect.value,
+      time: currentType==='event' ? timeInput.value : '', endTime: currentType==='event' ? endInput.value : '', remindTime: remindInput.value, leadReminders: leadSelection(), ...(ruleLocked ? {} : repeatRuleData()), notes:notesInput.value.trim(), recurrence:recurSelect.value,
       ...(completedPicker ? { completedAt: completedPicker.getValue() } : {}),
       priority: currentType==='event' ? false : priorityCheckbox.checked,
       subtasks: currentType==='event' ? [] : subtaskEditor.getValue()
     };
-    if(editing){ await updateTask(editing.id, data); }
+    if(editing){ await saveEdit(editing, data); }
     else{ await addTask(data); }
     state.modalOpen=false; render();
   }}, editing ? 'Save Changes' : (currentType==='event' ? 'Add Event' : 'Add Task'));
@@ -4060,7 +4263,9 @@ function renderModal(){
     el('div',{class:'field'}, el('label',{},'Remind me at a set time (optional)'), remindInput,
       el('div',{class:'settings-hint', style:'margin-top:5px;'}, 'Pops up with a sound on the due date while this tab is open.')),
     el('div',{class:'field'}, el('label',{},'Remind me before (optional)'), leadWrap, el('div',{class:'settings-hint', style:'margin-top:5px;'}, 'All-day items remind at 9:00 AM, or at the set time above.')),
-    el('div',{class:'field'}, el('label',{},'Repeats'), recurSelect),
+    el('div',{class:'field'}, el('label',{},'Repeats'), recurSelect,
+      scope ? el('div',{class:'settings-hint', style:'margin-top:5px;'}, ({ this:'Editing this one only. Its date can change; repeat settings stay as they are.', following:'Editing this and following. The repeat settings below apply from this date on.', all:'Editing all in the series. Dates and repeat settings stay as they are.' })[scope]) : null,
+      repeatRuleWrap, repeatError),
     el('div',{class:'field'}, el('label',{},'Notes'), notesInput),
     subtaskFieldWrap,
     el('div',{class:'modal-actions'},
