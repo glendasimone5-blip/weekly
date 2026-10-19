@@ -4,10 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Weekly — Task Console</title>
-<meta name="app-version" content="2026-10-17a">
+<meta name="app-version" content="2026-10-18a">
 <meta name="push-server" content="https://weekly-push.glendasimone5.workers.dev">
 <meta name="vapid-public" content="BC-oohRYdwdxzqXouwUBrQaCByRvzuUjy8b4DJceMHyCqO3XHOEfJklA7L0F82DayZs8B2XPIiYBkvV8MpSXRt8">
-<meta name="app-notes" content="Reminder popups, period heads-up, start and end check-ins, reminders that work when the app is closed, a wider layout, a full-page Settings, reminders set relative to the event (like 10 minutes before), add-on-selected-day, a Today button and titles in the calendar, editing repeating items (this one, this and following, all), flexible repeats (every N, chosen weekdays, an end date), event end times, editing completed tasks, a new weekly balance view, backup and restore, and a New Task button that opens the full form.">
+<meta name="app-notes" content="Reminder popups, period heads-up, start and end check-ins, reminders that work when the app is closed, a wider layout, a full-page Settings, reminders set relative to the event (like 10 minutes before), add-on-selected-day, a Today button and titles in the calendar, editing repeating items (this one, this and following, all), flexible repeats (every N, chosen weekdays, an end date), places on events with address search, event end times, editing completed tasks, a new weekly balance view, backup and restore, and a New Task button that opens the full form.">
 <script>
   // Runs before anything else in <head>, including the external libraries
   // below (which block parsing while they load) — otherwise the theme
@@ -801,6 +801,9 @@
   .lead-chip.active{ background:var(--accent); border-color:var(--accent); color:var(--on-accent); font-weight:700; }
   .repeat-rule{ margin-top:10px; padding:10px 12px; background:var(--surface-2); border:1px solid var(--border); border-radius:8px; }
   .repeat-rule select{ width:100%; }
+  .loc-results{ display:flex; flex-direction:column; gap:4px; margin-top:6px; }
+  .loc-result{ text-align:left; background:var(--surface-2); border:1px solid var(--border); color:var(--text-dim); border-radius:7px; padding:7px 10px; font-size:12.5px; }
+  .loc-result:hover{ border-color:var(--accent-dim); color:var(--text); }
   .fine{ text-align:center; color:var(--text-faint); font-size:11.5px; margin-top:30px; font-family:var(--mono); }
 
   /* ---------- Celebration: animation, toast, streak badge ---------- */
@@ -1496,7 +1499,7 @@ function generateSeriesOccurrences(seed, seriesId, fromDateStr){
     if(next > horizonEnd) break;
     created.push({
       id: genId(), type: seed.type || 'task', title: seed.title, category: seed.category, dueDate: next,
-      time: seed.time || '', remindTime: seed.remindTime || '', endTime: seed.endTime || '', leadReminders: Array.isArray(seed.leadReminders) ? seed.leadReminders.slice() : [], notes: seed.notes || '', recurrence: seed.recurrence, seriesId, repeatEvery: seed.repeatEvery || 1, repeatDays: Array.isArray(seed.repeatDays) ? seed.repeatDays.slice() : [], repeatUntil: seed.repeatUntil || '', repeatAnchor: seed.repeatAnchor || seed.dueDate,
+      time: seed.time || '', remindTime: seed.remindTime || '', endTime: seed.endTime || '', leadReminders: Array.isArray(seed.leadReminders) ? seed.leadReminders.slice() : [], notes: seed.notes || '', recurrence: seed.recurrence, seriesId, repeatEvery: seed.repeatEvery || 1, repeatDays: Array.isArray(seed.repeatDays) ? seed.repeatDays.slice() : [], repeatUntil: seed.repeatUntil || '', repeatAnchor: seed.repeatAnchor || seed.dueDate, location: seed.location || '', locationLat: seed.locationLat != null ? seed.locationLat : null, locationLon: seed.locationLon != null ? seed.locationLon : null,
       priority: seed.type==='event' ? false : !!seed.priority, subtasks: [],
       completed: false, completedAt: null, createdAt: todayStr()
     });
@@ -1571,6 +1574,7 @@ async function addTask(data){
     endTime: data.endTime || '',
     leadReminders: Array.isArray(data.leadReminders) ? data.leadReminders : [],
     repeatEvery: data.repeatEvery || 1, repeatDays: Array.isArray(data.repeatDays) ? data.repeatDays : [], repeatUntil: data.repeatUntil || '', repeatAnchor: recurrence!=='none' ? data.dueDate : '',
+    location: type==='event' ? (data.location || '') : '', locationLat: type==='event' && data.locationLat != null ? data.locationLat : null, locationLon: type==='event' && data.locationLon != null ? data.locationLon : null,
     notes: data.notes || '',
     recurrence,
     seriesId: recurrence!=='none' ? id : null,
@@ -1601,7 +1605,7 @@ async function duplicateTask(id){
 
   const clone = {
     id: genId(),
-    type: orig.type || 'task', time: orig.time || '', endTime: orig.endTime || '', leadReminders: Array.isArray(orig.leadReminders) ? orig.leadReminders.slice() : [], remindTime: orig.remindTime || '', priority: !!orig.priority,
+    type: orig.type || 'task', time: orig.time || '', endTime: orig.endTime || '', leadReminders: Array.isArray(orig.leadReminders) ? orig.leadReminders.slice() : [], location: orig.location || '', locationLat: orig.locationLat != null ? orig.locationLat : null, locationLon: orig.locationLon != null ? orig.locationLon : null, remindTime: orig.remindTime || '', priority: !!orig.priority,
     subtasks: (orig.subtasks || []).map(s=>({ id: genId(), title: s.title, completed: false })),
     title: orig.title,
     category: orig.category,
@@ -2907,7 +2911,7 @@ function buildReminderItems(){
     if(t.completed) return;
     reminderInstants(t).forEach(inst=>{
       if(inst.at <= now || inst.at > horizon) return;
-      items.push({ rid: t.id+'@'+inst.at, at: inst.at, title: t.title, body: t.type==='event' ? 'Event reminder' : 'Task reminder' });
+      items.push({ rid: t.id+'@'+inst.at, at: inst.at, title: t.title, body: (t.type==='event' && t.location) ? '📍 ' + t.location : (t.type==='event' ? 'Event reminder' : 'Task reminder') });
     });
   });
   if(pushTest && pushTest.at > Date.now()) items.push(pushTest);
@@ -3450,10 +3454,10 @@ function openFullTaskForm(){
 function renderQuickAddBar(){
   return el('div',{class:'quickadd-row'},
     el('span',{class:'quickadd-icon'}, '+'),
-    el('input',{id:'quickadd-input', type:'text', placeholder:'Type a title: Enter adds it now, or click + New Task for all options…',
+    el('input',{id:'quickadd-input', type:'text', placeholder:'Type a title: Enter adds it now, or click + Add for all options…',
       onkeydown:(e)=>{ if(e.key==='Enter'){ submitQuickAdd(); } }
     }),
-    el('button',{class:'quickadd-btn', title:'Open the full form: category, due date, time, repeat, reminder, priority, subtasks', onclick: openFullTaskForm}, '+ New Task'),
+    el('button',{class:'quickadd-btn', title:'Add a task or an event: category, date, time, place, repeat, reminders', onclick: openFullTaskForm}, '+ Add'),
     el('button',{class:'quickadd-full-btn', title:'Add instantly with default settings (same as pressing Enter)', onclick: submitQuickAdd}, 'Add now')
   );
 }
@@ -3589,7 +3593,7 @@ function renderSidebar(){
     el('button',{onclick:()=>{ addCategory(catInput.value); }}, '+')
   ));
 
-  sb.appendChild(el('button',{class:'new-task-btn', onclick:()=>{ state.editingTask=null; state.modalOpen=true; render(); }}, '+ New Task'));
+  sb.appendChild(el('button',{class:'new-task-btn', onclick:()=>{ state.editingTask=null; state.modalOpen=true; render(); }}, '+ Add'));
 
   sb.appendChild(renderCategoryProgress());
 
@@ -3620,7 +3624,7 @@ function renderMain(){
   if(state.activeCategory !== 'all') tasks = tasks.filter(t=>t.category===state.activeCategory);
 
   if(!state.tasks.length){
-    main.appendChild(el('div',{class:'empty'}, el('div',{}, el('b',{},'No tasks yet.'), ' Click “+ New Task” to plan your week.')));
+    main.appendChild(el('div',{class:'empty'}, el('div',{}, el('b',{},'No tasks yet.'), ' Click “+ Add” to plan your week.')));
     return main;
   }
 
@@ -3714,7 +3718,7 @@ function reminderBadge(t){
 }
 
 /* ---- Editing and deleting repeating items: this one / this and following / all ---- */
-const SERIES_FIELDS = ['title','category','notes','time','endTime','remindTime','leadReminders','priority'];
+const SERIES_FIELDS = ['title','category','notes','time','endTime','remindTime','leadReminders','priority','location','locationLat','locationLon'];
 function isSeriesItem(t){ return !!(t && t.seriesId && t.recurrence && t.recurrence !== 'none' && !t.completed); }
 function dayBefore(dateStr){ const d = parseDate(dateStr); d.setDate(d.getDate()-1); return fmt(d); }
 function requestEdit(t){
@@ -3811,6 +3815,36 @@ function renderScopeDialog(){
   );
 }
 
+/* ---- Event locations: free text, optionally searched on OpenStreetMap ---- */
+// The public search service allows ~1 request/second for everyone and forbids search-as-you-type,
+// so searching only happens on an explicit press, is throttled, and results are cached.
+const geoCache = {};
+let geoLastAt = 0;
+async function geoSearch(q){
+  const key = q.toLowerCase();
+  if(geoCache[key]) return geoCache[key];
+  const wait = geoLastAt + 1100 - Date.now();
+  if(wait > 0) await new Promise(r=>setTimeout(r, wait));
+  geoLastAt = Date.now();
+  const r = await fetch('https://nominatim.openstreetmap.org/search?format=jsonv2&limit=5&q=' + encodeURIComponent(q));
+  if(!r.ok) throw new Error('status ' + r.status);
+  const rows = await r.json();
+  geoCache[key] = rows;
+  return rows;
+}
+function shortPlaceLabel(row){
+  const parts = String(row.display_name || '').split(', ');
+  return parts.length > 4 ? parts.slice(0,3).concat(parts.slice(-1)).join(', ') : parts.join(', ');
+}
+function mapsUrl(t){
+  const q = (t.locationLat != null && t.locationLon != null) ? t.locationLat + ',' + t.locationLon : t.location;
+  return 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(q);
+}
+function locationLine(t){
+  if(!t.location) return null;
+  return el('div',{class:'notes'}, '📍 ', el('a',{href:mapsUrl(t), target:'_blank', rel:'noopener', style:'color:var(--accent); text-decoration:underline;'}, t.location));
+}
+
 function renderTask(t){
   const isEvent = t.type==='event';
   const overdue = isOverdue(t);
@@ -3838,6 +3872,7 @@ function renderTask(t){
         reminderBadge(t),
         hasSubtasks ? el('button',{class:'badge subtask-toggle', onclick:()=>toggleSubtaskExpanded(t.id)}, (isExpanded?'▾ ':'▸ ')+subtaskDoneCount+'/'+t.subtasks.length) : null
       ),
+      locationLine(t),
       t.notes ? el('div',{class:'notes'}, t.notes) : null,
       (hasSubtasks && isExpanded) ? el('div',{class:'subtask-list'},
         ...t.subtasks.map(s=> el('div',{class:'subtask-row'+(s.completed?' done':'')},
@@ -3891,7 +3926,7 @@ function renderSearchView(){
 function renderAllTasksView(){
   const wrap = el('div',{});
   if(!state.tasks.length){
-    wrap.appendChild(el('div',{class:'empty'}, el('div',{}, el('b',{},'No tasks yet.'), ' Click “+ New Task” to plan your week.')));
+    wrap.appendChild(el('div',{class:'empty'}, el('div',{}, el('b',{},'No tasks yet.'), ' Click “+ Add” to plan your week.')));
     return wrap;
   }
 
@@ -4138,6 +4173,34 @@ function renderModal(){
   const endInput = el('input',{type:'time', value: (editing&&editing.endTime)?editing.endTime:''});
   const endError = el('div',{class:'settings-hint', style:'color:var(--danger); display:none; margin-top:5px;'});
   let leadSel = (editing && Array.isArray(editing.leadReminders)) ? editing.leadReminders.slice() : [];
+  let locLat = (editing && editing.locationLat != null) ? editing.locationLat : null;
+  let locLon = (editing && editing.locationLon != null) ? editing.locationLon : null;
+  const locationInput = el('input',{type:'text', value:(editing && editing.location) || '', placeholder:'Add a place or address', maxlength:'200'});
+  const locationResults = el('div',{class:'loc-results'});
+  const locationStatus = el('div',{class:'settings-hint', style:'margin-top:5px;'});
+  async function searchLocation(){
+    const q = locationInput.value.trim();
+    locationResults.innerHTML = ''; locationStatus.textContent = '';
+    if(q.length < 3){ locationStatus.textContent = 'Type at least 3 characters, then search.'; return; }
+    locationStatus.textContent = 'Searching…';
+    try{
+      const rows = await geoSearch(q);
+      locationStatus.textContent = rows.length ? 'Pick a result. Search data © OpenStreetMap contributors.' : 'No matches. You can still keep what you typed.';
+      rows.forEach(row=>{
+        const label = shortPlaceLabel(row);
+        locationResults.appendChild(el('button',{type:'button', class:'loc-result', title:row.display_name, onclick:()=>{
+          locationInput.value = label; locLat = parseFloat(row.lat); locLon = parseFloat(row.lon);
+          locationResults.innerHTML = ''; locationStatus.textContent = 'Saved with map coordinates.';
+        }}, label));
+      });
+    }catch(e){ locationStatus.textContent = 'Could not reach the address search. You can still type the place by hand.'; }
+  }
+  locationInput.addEventListener('input', ()=>{ locLat = null; locLon = null; });
+  locationInput.addEventListener('keydown', (e)=>{ if(e.key === 'Enter'){ e.preventDefault(); searchLocation(); } });
+  const locationFieldWrap = el('div',{class:'field', style: currentType==='event' ? '' : 'display:none;'},
+    el('label',{},'Location (optional)'),
+    el('div',{style:'display:flex; gap:6px;'}, locationInput, el('button',{type:'button', class:'quickadd-full-btn', title:'Search for an address', onclick: searchLocation}, '🔍')),
+    locationStatus, locationResults);
   const leadWrap = el('div',{class:'lead-chips'});
   const LEAD_TIMED = [[0,'At start'],[5,'5 min'],[10,'10 min'],[15,'15 min'],[30,'30 min'],[60,'1 hour'],[120,'2 hours'],[1440,'1 day']];
   const LEAD_DAY = [[0,'On the day'],[1440,'1 day before'],[2880,'2 days before'],[10080,'1 week before']];
@@ -4225,7 +4288,7 @@ function renderModal(){
     }
     const data = {
       type: currentType, title:titleInput.value.trim(), category:catSelect.value, dueDate:datePicker.getValue(),
-      time: currentType==='event' ? timeInput.value : '', endTime: currentType==='event' ? endInput.value : '', remindTime: remindInput.value, leadReminders: leadSelection(), ...(ruleLocked ? {} : repeatRuleData()), notes:notesInput.value.trim(), recurrence:recurSelect.value,
+      time: currentType==='event' ? timeInput.value : '', endTime: currentType==='event' ? endInput.value : '', remindTime: remindInput.value, leadReminders: leadSelection(), location: currentType==='event' ? locationInput.value.trim() : '', locationLat: currentType==='event' ? locLat : null, locationLon: currentType==='event' ? locLon : null, ...(ruleLocked ? {} : repeatRuleData()), notes:notesInput.value.trim(), recurrence:recurSelect.value,
       ...(completedPicker ? { completedAt: completedPicker.getValue() } : {}),
       priority: currentType==='event' ? false : priorityCheckbox.checked,
       subtasks: currentType==='event' ? [] : subtaskEditor.getValue()
@@ -4244,6 +4307,7 @@ function renderModal(){
     priorityFieldWrap.style.display = currentType==='event' ? 'none' : '';
     subtaskFieldWrap.style.display = currentType==='event' ? 'none' : '';
     dateLabel.textContent = currentType==='event' ? 'Date' : 'Due Date';
+    locationFieldWrap.style.display = currentType==='event' ? '' : 'none';
     renderLeadChips();
     heading.textContent = editing ? (currentType==='event'?'Edit Event':'Edit Task') : (currentType==='event'?'New Event':'New Task');
     submitBtn.textContent = editing ? 'Save Changes' : (currentType==='event' ? 'Add Event' : 'Add Task');
@@ -4260,6 +4324,7 @@ function renderModal(){
     el('div',{class:'field', style:'position:relative;'}, dateLabel, datePicker.el),
     completedPicker ? el('div',{class:'field', style:'position:relative;'}, el('label',{},'Completed on'), completedPicker.el) : null,
     timeFieldWrap,
+    locationFieldWrap,
     el('div',{class:'field'}, el('label',{},'Remind me at a set time (optional)'), remindInput,
       el('div',{class:'settings-hint', style:'margin-top:5px;'}, 'Pops up with a sound on the due date while this tab is open.')),
     el('div',{class:'field'}, el('label',{},'Remind me before (optional)'), leadWrap, el('div',{class:'settings-hint', style:'margin-top:5px;'}, 'All-day items remind at 9:00 AM, or at the set time above.')),
