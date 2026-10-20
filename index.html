@@ -5,10 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' https://weekly-push.glendasimone5.workers.dev https://nominatim.openstreetmap.org; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
 <title>Weekly — Task Console</title>
-<meta name="app-version" content="2026-10-20a">
+<meta name="app-version" content="2026-10-21a">
 <meta name="push-server" content="https://weekly-push.glendasimone5.workers.dev">
 <meta name="vapid-public" content="BC-oohRYdwdxzqXouwUBrQaCByRvzuUjy8b4DJceMHyCqO3XHOEfJklA7L0F82DayZs8B2XPIiYBkvV8MpSXRt8">
-<meta name="app-notes" content="Reminder popups, period heads-up, start and end check-ins, reminders that work when the app is closed, a wider layout, a full-page Settings, reminders set relative to the event (like 10 minutes before), add-on-selected-day, a Today button and titles in the calendar, editing repeating items (this one, this and following, all), flexible repeats (every N, chosen weekdays, an end date), places on events with address search, sync between your devices (encrypted so the server cannot read it), a connection allow-list and a problem log in Settings, event end times, editing completed tasks, a new weekly balance view, backup and restore, and a New Task button that opens the full form.">
+<meta name="app-notes" content="Reminder popups, period heads-up, start and end check-ins, reminders that work when the app is closed, a wider layout, a full-page Settings, reminders set relative to the event (like 10 minutes before), add-on-selected-day, a Today button and titles in the calendar, editing repeating items (this one, this and following, all), flexible repeats (every N, chosen weekdays, an end date), places on events with address search, sync between your devices (encrypted so the server cannot read it), a connection allow-list, a problem log in Settings, and an optional app lock that encrypts data on the device and locks when idle, event end times, editing completed tasks, a new weekly balance view, backup and restore, and a New Task button that opens the full form.">
 <script>
   // Runs before anything else in <head>, including the external libraries
   // below (which block parsing while they load) — otherwise the theme
@@ -19,7 +19,7 @@
     try{
       var raw = localStorage.getItem('weekly-app:meta');
       if(raw){
-        var theme = JSON.parse(raw).theme;
+        var theme = raw.indexOf('enc1:') === 0 ? localStorage.getItem('weekly-app:theme') : JSON.parse(raw).theme;
         if(theme && theme !== 'moonlit'){ document.documentElement.setAttribute('data-theme', theme); }
       }
     }catch(e){ /* stylesheet default (Moonlit) applies; JS load will still correct it */ }
@@ -807,6 +807,7 @@
   .loc-result:hover{ border-color:var(--accent-dim); color:var(--text); }
   .sync-code{ font-family:var(--mono); font-size:13px; letter-spacing:1px; background:var(--surface-2); border:1px solid var(--border); border-radius:7px; padding:9px 11px; margin-top:6px; color:var(--text); word-break:break-all; }
   .diag-list{ font-family:var(--mono); font-size:10.5px; color:var(--text-dim); line-height:1.6; word-break:break-word; }
+  .lock-screen{ margin:14vh auto 0; }
   .fine{ text-align:center; color:var(--text-faint); font-size:11.5px; margin-top:30px; font-family:var(--mono); }
 
   /* ---------- Celebration: animation, toast, streak badge ---------- */
@@ -1057,6 +1058,15 @@ const hasCloudStorage = (typeof window !== 'undefined' && !!window.storage);
 const LS_PREFIX = 'weekly-app:';
 
 async function storageGet(key){
+  // Reads go through the app lock: encrypted values are decrypted with the in-memory key, or withheld while locked.
+  const r = await storageGetRaw(key);
+  if(r && typeof r.value === 'string' && r.value.indexOf('enc1:') === 0){
+    if(!lockKey) return null;
+    try{ return Object.assign({}, r, { value: await lockDecrypt(r.value) }); }catch(e){ return null; }
+  }
+  return r;
+}
+async function storageGetRaw(key){
   if(hasCloudStorage){
     try{ return await window.storage.get(key); }
     catch(e){ return null; }
@@ -1067,6 +1077,15 @@ async function storageGet(key){
   }catch(e){ return null; }
 }
 async function storageSet(key, value){
+  // While a lock exists but is not open, never write: that could overwrite encrypted data with plain text.
+  if(lockCfg && !lockKey) return null;
+  if(lockKey && key !== 'lock'){
+    if(key === 'meta'){ try{ localStorage.setItem(LS_PREFIX + 'theme', JSON.parse(value).theme || ''); }catch(e){} }   // lets the right theme show on the lock screen
+    value = await lockEncrypt(value);
+  }
+  return storageSetRaw(key, value);
+}
+async function storageSetRaw(key, value){
   if(hasCloudStorage){
     try{ return await window.storage.set(key, value); }
     catch(e){ console.error('storage.set failed', key, e); return null; }
@@ -2640,6 +2659,7 @@ function renderSettingsModal(){
       )
     ),
 
+    lockSettingsSection(),
     syncSettingsSection(),
     diagnosticsSection(),
     el('div',{class:'settings-section settings-danger-zone'},
@@ -3174,6 +3194,192 @@ function diagnosticsSection(){
   return sec;
 }
 
+/* ============================ APP LOCK ============================ */
+// Optional. When on, everything the app saves on this device is encrypted (AES-GCM) with a key made from a
+// passphrase (PBKDF2, 600,000 rounds). The key is held in memory and, so a reload does not ask again straight
+// away, in this tab's session storage until the idle time passes. A forgotten passphrase cannot be recovered.
+let lockKey = null, lockCfg = null, lockLastTouch = 0, lockWatching = false, LOCK_ITER = 600000;
+const LOCK_KEYS = ['tasks','categories','meta','period','plot','syncstate','diag'];
+const LOCK_OK_TEXT = 'weekly-lock-ok';
+function lockEnabled(){ return !!lockCfg; }
+async function storageRemoveRaw(key){
+  if(hasCloudStorage){ try{ await window.storage.delete(key); }catch(e){} return; }
+  try{ localStorage.removeItem(LS_PREFIX + key); }catch(e){}
+}
+async function lockEncrypt(text, key){
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = new Uint8Array(await crypto.subtle.encrypt({ name:'AES-GCM', iv }, key || lockKey, new TextEncoder().encode(text)));
+  const out = new Uint8Array(12 + ct.length); out.set(iv); out.set(ct, 12);
+  return 'enc1:' + toB64(out);
+}
+async function lockDecrypt(s, key){
+  const raw = fromB64(s.slice(5));
+  return new TextDecoder().decode(await crypto.subtle.decrypt({ name:'AES-GCM', iv:raw.subarray(0,12) }, key || lockKey, raw.subarray(12)));
+}
+async function lockDerive(pass, saltB64, iter){
+  const base = await crypto.subtle.importKey('raw', new TextEncoder().encode(pass), 'PBKDF2', false, ['deriveBits']);
+  return new Uint8Array(await crypto.subtle.deriveBits({ name:'PBKDF2', hash:'SHA-256', salt:fromB64(saltB64), iterations:iter }, base, 256));
+}
+const lockImport = (bytes)=> crypto.subtle.importKey('raw', bytes, 'AES-GCM', false, ['encrypt','decrypt']);
+async function lockCheck(pass){
+  if(!lockCfg) return null;
+  try{
+    const bytes = await lockDerive(pass, lockCfg.salt, lockCfg.iter), key = await lockImport(bytes);
+    return (await lockDecrypt(lockCfg.verifier, key)) === LOCK_OK_TEXT ? { bytes, key } : null;
+  }catch(e){ return null; }
+}
+function lockSession(bytes){ try{ sessionStorage.setItem('weekly-lockkey', toB64(bytes)); sessionStorage.setItem('weekly-lockact', String(Date.now())); }catch(e){} }
+function lockSessionClear(){ try{ sessionStorage.removeItem('weekly-lockkey'); sessionStorage.removeItem('weekly-lockact'); }catch(e){} }
+async function lockInit(){
+  try{ const r = await storageGetRaw('lock'); lockCfg = r ? JSON.parse(r.value) : null; }catch(e){ lockCfg = null; }
+  if(!lockCfg) return true;
+  try{
+    const sk = sessionStorage.getItem('weekly-lockkey'), la = Number(sessionStorage.getItem('weekly-lockact') || 0);
+    if(sk && Date.now() - la < lockCfg.idleMin * 60000){ lockKey = await lockImport(fromB64(sk)); lockLastTouch = 0; lockTouch(); return true; }
+  }catch(e){}
+  lockSessionClear();
+  return false;
+}
+function lockTouch(){
+  const now = Date.now();
+  if(now - lockLastTouch < 15000) return;
+  lockLastTouch = now;
+  try{ sessionStorage.setItem('weekly-lockact', String(now)); }catch(e){}
+}
+function lockIdleExpired(){
+  if(!lockCfg || !lockKey) return false;
+  let la = 0; try{ la = Number(sessionStorage.getItem('weekly-lockact') || 0); }catch(e){}
+  return Date.now() - la > lockCfg.idleMin * 60000;
+}
+function lockNow(){ lockSessionClear(); location.reload(); }
+function startLockWatcher(){
+  if(!lockCfg || lockWatching) return;
+  lockWatching = true;
+  ['pointerdown','keydown','touchstart','wheel'].forEach(ev=>document.addEventListener(ev, lockTouch, { passive:true, capture:true }));
+  setInterval(()=>{ if(lockIdleExpired()) lockNow(); }, 10000);
+  document.addEventListener('visibilitychange', ()=>{ if(!document.hidden && lockIdleExpired()) lockNow(); });
+  lockTouch();
+}
+function eraseThisDevice(){
+  if(!confirm('Erase everything the app has stored on this device? Your data can only come back from a backup file or a synced device.')) return;
+  try{
+    if(hasCloudStorage){ LOCK_KEYS.concat(['lock']).forEach(k=>{ try{ window.storage.delete(k); }catch(e){} }); }
+    Object.keys(localStorage).filter(k=>k.indexOf(LS_PREFIX) === 0).forEach(k=>localStorage.removeItem(k));
+    sessionStorage.clear();
+  }catch(e){}
+  location.reload();
+}
+function renderLockScreen(onOpen){
+  const app = document.getElementById('app'); app.innerHTML = '';
+  const input = el('input',{id:'lock-pass', type:'password', autocomplete:'off', placeholder:'Passphrase'});
+  const msg = el('div',{class:'settings-hint', style:'min-height:20px; margin-top:8px; color:var(--text);'});
+  let fails = 0, busy = false;
+  const open = async ()=>{
+    if(busy || !input.value) return;
+    busy = true; msg.textContent = 'Checking…';
+    const ok = await lockCheck(input.value);
+    if(ok){ lockKey = ok.key; lockSession(ok.bytes); lockLastTouch = 0; lockTouch(); app.innerHTML = ''; await onOpen(); return; }
+    fails++; input.value = ''; msg.textContent = 'That passphrase did not match.';
+    await new Promise(r=>setTimeout(r, Math.min(8000, 400 * Math.pow(2, Math.min(fails, 5)))));   // slows repeated guesses
+    busy = false; msg.textContent = 'That passphrase did not match. Try again.'; input.focus();
+  };
+  input.addEventListener('keydown', e=>{ if(e.key === 'Enter') open(); });
+  app.appendChild(el('div',{class:'modal lock-screen'},
+    el('h2',{}, '🔒 Locked'),
+    el('div',{class:'settings-hint', style:'margin-bottom:12px;'}, 'Enter your passphrase to open the app.'),
+    el('div',{class:'field'}, input),
+    el('button',{class:'settings-action-btn', onclick: open}, 'Unlock'),
+    msg,
+    el('div',{style:'margin-top:18px; border-top:1px solid var(--border); padding-top:12px;'},
+      el('div',{class:'settings-hint'}, 'Forgotten it? It cannot be reset. The only way back is to erase this device and restore from a backup file or a synced device.'),
+      el('button',{class:'settings-danger-btn', onclick: eraseThisDevice}, 'Erase this device')
+    )
+  ));
+  setTimeout(()=>input.focus(), 50);
+}
+
+async function lockRewriteAll(){
+  // Re-saves every stored item under the current lock settings (encrypting or not).
+  const vals = {};
+  for(const k of LOCK_KEYS){ const r = await storageGet(k); if(r) vals[k] = r.value; }
+  return vals;
+}
+function lockMsg(t){ state.lockStatus = t; render(); }
+async function lockTurnOn(p1, p2, idleMin){
+  if(p1.length < 8){ return lockMsg('Use at least 8 characters. A short sentence of unrelated words works well.'); }
+  if(p1 !== p2){ return lockMsg('The two passphrases do not match.'); }
+  try{
+    const salt = toB64(crypto.getRandomValues(new Uint8Array(16)));
+    const bytes = await lockDerive(p1, salt, LOCK_ITER), key = await lockImport(bytes);
+    const vals = await lockRewriteAll();
+    lockKey = key; lockCfg = { v:1, salt, iter:LOCK_ITER, idleMin, verifier: await lockEncrypt(LOCK_OK_TEXT, key) };
+    await storageSetRaw('lock', JSON.stringify(lockCfg));
+    for(const k of Object.keys(vals)) await storageSet(k, vals[k]);
+    lockSession(bytes); lockLastTouch = 0; startLockWatcher();
+    lockMsg('App lock is on. Everything saved on this device is now encrypted.');
+  }catch(e){ lockKey = null; lockCfg = null; lockMsg('Could not turn on the lock: ' + (e.message || e) + '.'); }
+}
+async function lockChange(cur, n1, n2){
+  if(!(await lockCheck(cur))) return lockMsg('The current passphrase is not right.');
+  if(n1.length < 8) return lockMsg('Use at least 8 characters.');
+  if(n1 !== n2) return lockMsg('The two new passphrases do not match.');
+  try{
+    const vals = await lockRewriteAll();
+    const salt = toB64(crypto.getRandomValues(new Uint8Array(16)));
+    const bytes = await lockDerive(n1, salt, LOCK_ITER), key = await lockImport(bytes);
+    lockKey = key; lockCfg = Object.assign({}, lockCfg, { salt, iter:LOCK_ITER, verifier: await lockEncrypt(LOCK_OK_TEXT, key) });
+    await storageSetRaw('lock', JSON.stringify(lockCfg));
+    for(const k of Object.keys(vals)) await storageSet(k, vals[k]);
+    lockSession(bytes); state.lockForm = null;
+    lockMsg('Passphrase changed.');
+  }catch(e){ lockMsg('Could not change the passphrase: ' + (e.message || e) + '.'); }
+}
+async function lockTurnOff(cur){
+  if(!(await lockCheck(cur))) return lockMsg('That passphrase is not right.');
+  try{
+    const vals = await lockRewriteAll();
+    for(const k of Object.keys(vals)) await storageSetRaw(k, vals[k]);   // back to plain, then drop the lock
+    await storageRemoveRaw('lock'); try{ localStorage.removeItem(LS_PREFIX + 'theme'); }catch(e){}
+    lockCfg = null; lockKey = null; lockSessionClear(); state.lockForm = null;
+    lockMsg('App lock is off. Data on this device is no longer encrypted.');
+  }catch(e){ lockMsg('Could not turn off the lock: ' + (e.message || e) + '.'); }
+}
+function lockSettingsSection(){
+  const sec = el('div',{class:'settings-section'}, el('div',{class:'settings-section-title'}, 'App lock'));
+  if(typeof crypto === 'undefined' || !crypto.subtle){ sec.appendChild(el('div',{class:'settings-hint'}, 'Not available in this browser or when opened as a file.')); return sec; }
+  const pw = (ph)=> el('input',{type:'password', autocomplete:'off', placeholder:ph, style:'width:100%; margin-top:8px; background:var(--bg); border:1px solid var(--border); color:var(--text); border-radius:7px; padding:9px 11px; font-size:13px;'});
+  const idleSel = el('select',{class:'calendar-placement-select'}, [1,5,15,30].map(m=>el('option',{value:String(m), ...(m === ((lockCfg && lockCfg.idleMin) || 5) ? {selected:'selected'} : {})}, m + ' min')));
+  const btn = (label, fn, primary)=> el('button',{class: primary ? 'settings-action-btn' : 'quickadd-full-btn', onclick: fn}, label);
+  if(!lockCfg){
+    sec.appendChild(el('div',{class:'settings-hint', style:'margin-bottom:8px;'}, 'Keep your data private from anyone else who uses this device. It is encrypted with a passphrase you choose, and the app locks itself after you stop using it. It cannot be reset: if you forget the passphrase, you will need a backup file or a synced device. It does not hide that the app exists, and it protects data stored on this device only (backup files are separate).'));
+    const a = pw('New passphrase (8+ characters)'), b = pw('Type it again');
+    sec.appendChild(a); sec.appendChild(b);
+    sec.appendChild(el('div',{class:'settings-row', style:'margin:10px 0;'}, el('span',{}, 'Lock after no use for'), idleSel));
+    sec.appendChild(btn('Turn on app lock', ()=>lockTurnOn(a.value, b.value, Number(idleSel.value)), true));
+  } else {
+    sec.appendChild(el('div',{class:'settings-hint', style:'margin-bottom:8px;'}, '● On. Data on this device is encrypted, and the app locks after ' + lockCfg.idleMin + ' minutes without use.'));
+    idleSel.addEventListener('change', async ()=>{ lockCfg.idleMin = Number(idleSel.value); await storageSetRaw('lock', JSON.stringify(lockCfg)); lockMsg('Lock time updated.'); });
+    sec.appendChild(el('div',{class:'settings-row', style:'margin-bottom:10px;'}, el('span',{}, 'Lock after no use for'), idleSel));
+    sec.appendChild(el('div',{style:'display:flex; gap:8px; flex-wrap:wrap;'},
+      btn('Lock now', lockNow, true),
+      btn('Change passphrase', ()=>{ state.lockForm = state.lockForm === 'change' ? null : 'change'; render(); }, false),
+      btn('Turn off lock', ()=>{ state.lockForm = state.lockForm === 'off' ? null : 'off'; render(); }, false)
+    ));
+    if(state.lockForm === 'change'){
+      const c = pw('Current passphrase'), n1 = pw('New passphrase (8+ characters)'), n2 = pw('New passphrase again');
+      [c, n1, n2].forEach(x=>sec.appendChild(x));
+      sec.appendChild(el('div',{style:'margin-top:8px;'}, btn('Save new passphrase', ()=>lockChange(c.value, n1.value, n2.value), true)));
+    }
+    if(state.lockForm === 'off'){
+      const c = pw('Current passphrase');
+      sec.appendChild(c);
+      sec.appendChild(el('div',{style:'margin-top:8px;'}, btn('Confirm and turn off', ()=>lockTurnOff(c.value), true)));
+    }
+  }
+  if(state.lockStatus) sec.appendChild(el('div',{class:'settings-hint', style:'margin-top:10px; color:var(--text);'}, state.lockStatus));
+  return sec;
+}
+
 /* ============================ RELIABLE REMINDERS (WEB PUSH) ============================ */
 // The push server only learns WHEN to ping this device. Reminder text stays on the device:
 // the service worker reads it from a local copy (IndexedDB) that the app keeps up to date here.
@@ -3237,7 +3443,7 @@ async function mirrorRemindersForWorker(items){
   await new Promise((res, rej)=>{
     const tx = db.transaction('reminders', 'readwrite'), st = tx.objectStore('reminders');
     st.clear();
-    items.forEach(i=> st.put(Object.assign({ shown:false }, i)));
+    items.forEach(i=> st.put(Object.assign({ shown:false }, lockEnabled() ? Object.assign({}, i, { title:'Weekly reminder', body:'' }) : i)));   // locked app: nothing readable on the lock screen
     tx.oncomplete = res; tx.onerror = ()=> rej(tx.error);
   });
   db.close();
@@ -4861,6 +5067,12 @@ function renderUpdateBanner(){
 
 /* ============================ INIT ============================ */
 async function init(){
+  const open = await lockInit();
+  if(!open){ renderLockScreen(async ()=>{ startLockWatcher(); await initLegacy(); }); return; }
+  startLockWatcher();
+  await initLegacy();
+}
+async function initLegacy(){
   document.getElementById('app').innerHTML = '<div class="fine" style="padding-top:60px;">Loading…</div>';
   await loadState();
   await loadSyncState();
