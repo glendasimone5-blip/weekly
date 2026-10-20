@@ -3,11 +3,12 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' https://weekly-push.glendasimone5.workers.dev https://nominatim.openstreetmap.org; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
 <title>Weekly — Task Console</title>
-<meta name="app-version" content="2026-10-19a">
+<meta name="app-version" content="2026-10-20a">
 <meta name="push-server" content="https://weekly-push.glendasimone5.workers.dev">
 <meta name="vapid-public" content="BC-oohRYdwdxzqXouwUBrQaCByRvzuUjy8b4DJceMHyCqO3XHOEfJklA7L0F82DayZs8B2XPIiYBkvV8MpSXRt8">
-<meta name="app-notes" content="Reminder popups, period heads-up, start and end check-ins, reminders that work when the app is closed, a wider layout, a full-page Settings, reminders set relative to the event (like 10 minutes before), add-on-selected-day, a Today button and titles in the calendar, editing repeating items (this one, this and following, all), flexible repeats (every N, chosen weekdays, an end date), places on events with address search, sync between your devices (encrypted so the server cannot read it), event end times, editing completed tasks, a new weekly balance view, backup and restore, and a New Task button that opens the full form.">
+<meta name="app-notes" content="Reminder popups, period heads-up, start and end check-ins, reminders that work when the app is closed, a wider layout, a full-page Settings, reminders set relative to the event (like 10 minutes before), add-on-selected-day, a Today button and titles in the calendar, editing repeating items (this one, this and following, all), flexible repeats (every N, chosen weekdays, an end date), places on events with address search, sync between your devices (encrypted so the server cannot read it), a connection allow-list and a problem log in Settings, event end times, editing completed tasks, a new weekly balance view, backup and restore, and a New Task button that opens the full form.">
 <script>
   // Runs before anything else in <head>, including the external libraries
   // below (which block parsing while they load) — otherwise the theme
@@ -805,6 +806,7 @@
   .loc-result{ text-align:left; background:var(--surface-2); border:1px solid var(--border); color:var(--text-dim); border-radius:7px; padding:7px 10px; font-size:12.5px; }
   .loc-result:hover{ border-color:var(--accent-dim); color:var(--text); }
   .sync-code{ font-family:var(--mono); font-size:13px; letter-spacing:1px; background:var(--surface-2); border:1px solid var(--border); border-radius:7px; padding:9px 11px; margin-top:6px; color:var(--text); word-break:break-all; }
+  .diag-list{ font-family:var(--mono); font-size:10.5px; color:var(--text-dim); line-height:1.6; word-break:break-word; }
   .fine{ text-align:center; color:var(--text-faint); font-size:11.5px; margin-top:30px; font-family:var(--mono); }
 
   /* ---------- Celebration: animation, toast, streak badge ---------- */
@@ -2639,6 +2641,7 @@ function renderSettingsModal(){
     ),
 
     syncSettingsSection(),
+    diagnosticsSection(),
     el('div',{class:'settings-section settings-danger-zone'},
       el('div',{class:'settings-section-title'}, 'Data'),
       el('div',{class:'settings-hint'}, 'For giving someone else a clean copy of this app — clears every task, category, period entry, and preference stored on this device or account.'),
@@ -3138,6 +3141,36 @@ function syncSettingsSection(){
     ));
   }
   if(state.syncStatus) sec.appendChild(el('div',{class:'settings-hint', style:'margin-top:10px; color:var(--text);'}, state.syncStatus));
+  return sec;
+}
+
+/* ============================ DIAGNOSTICS (kept on this device only) ============================ */
+// Records problems (script errors, failed promises, blocked connections) so something that goes wrong can be
+// described exactly. Nothing is sent anywhere: the person copies it themselves if they want help.
+const diagLog = [];
+function diagAdd(kind, msg){
+  diagLog.push({ t:new Date().toISOString(), kind, msg:String(msg).slice(0, 300) });
+  if(diagLog.length > 40) diagLog.shift();
+  try{ storageSet('diag', JSON.stringify(diagLog)); }catch(e){}
+}
+async function loadDiag(){
+  try{ const d = await storageGet('diag'); if(d){ JSON.parse(d.value).forEach(x=>diagLog.push(x)); } }catch(e){}
+}
+window.addEventListener('error', e=>diagAdd('error', (e.message || 'error') + (e.filename ? ' (' + String(e.filename).split('/').pop() + ':' + e.lineno + ')' : '')));
+window.addEventListener('unhandledrejection', e=>diagAdd('promise', e.reason && e.reason.message ? e.reason.message : e.reason));
+document.addEventListener('securitypolicyviolation', e=>diagAdd('blocked', e.violatedDirective + ' stopped ' + e.blockedURI));
+function diagnosticsSection(){
+  const sec = el('div',{class:'settings-section'}, el('div',{class:'settings-section-title'}, 'Diagnostics'));
+  if(!diagLog.length){
+    sec.appendChild(el('div',{class:'settings-hint'}, 'No problems recorded. If something stops working, it will be listed here. This stays on this device.'));
+    return sec;
+  }
+  sec.appendChild(el('div',{class:'settings-hint', style:'margin-bottom:8px;'}, diagLog.length + ' problem' + (diagLog.length===1?'':'s') + ' recorded on this device. Nothing is sent anywhere. Copy it and send it to whoever looks after the app if something is not working.'));
+  sec.appendChild(el('div',{class:'diag-list'}, diagLog.slice(-5).reverse().map(x=>el('div',{}, x.t.slice(11,16) + ' · ' + x.kind + ' · ' + x.msg))));
+  sec.appendChild(el('div',{style:'display:flex; gap:8px; margin-top:10px;'},
+    el('button',{class:'quickadd-full-btn', onclick: async ()=>{ try{ await navigator.clipboard.writeText(diagLog.map(x=>x.t+' '+x.kind+' '+x.msg).join('\n')); syncMsg('Problem log copied.'); }catch(e){ syncMsg('Could not copy.'); } render(); }}, 'Copy log'),
+    el('button',{class:'quickadd-full-btn', onclick:()=>{ diagLog.length = 0; storageSet('diag', '[]'); render(); }}, 'Clear')
+  ));
   return sec;
 }
 
@@ -4831,6 +4864,7 @@ async function init(){
   document.getElementById('app').innerHTML = '<div class="fine" style="padding-top:60px;">Loading…</div>';
   await loadState();
   await loadSyncState();
+  await loadDiag();
   applyTheme(state.meta.theme);
   const fieldsFixed = migrateTaskFields();
   const migrated = migrateLegacyRecurring();
