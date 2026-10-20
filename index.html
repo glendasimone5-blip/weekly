@@ -4,10 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Weekly — Task Console</title>
-<meta name="app-version" content="2026-10-18a">
+<meta name="app-version" content="2026-10-19a">
 <meta name="push-server" content="https://weekly-push.glendasimone5.workers.dev">
 <meta name="vapid-public" content="BC-oohRYdwdxzqXouwUBrQaCByRvzuUjy8b4DJceMHyCqO3XHOEfJklA7L0F82DayZs8B2XPIiYBkvV8MpSXRt8">
-<meta name="app-notes" content="Reminder popups, period heads-up, start and end check-ins, reminders that work when the app is closed, a wider layout, a full-page Settings, reminders set relative to the event (like 10 minutes before), add-on-selected-day, a Today button and titles in the calendar, editing repeating items (this one, this and following, all), flexible repeats (every N, chosen weekdays, an end date), places on events with address search, event end times, editing completed tasks, a new weekly balance view, backup and restore, and a New Task button that opens the full form.">
+<meta name="app-notes" content="Reminder popups, period heads-up, start and end check-ins, reminders that work when the app is closed, a wider layout, a full-page Settings, reminders set relative to the event (like 10 minutes before), add-on-selected-day, a Today button and titles in the calendar, editing repeating items (this one, this and following, all), flexible repeats (every N, chosen weekdays, an end date), places on events with address search, sync between your devices (encrypted so the server cannot read it), event end times, editing completed tasks, a new weekly balance view, backup and restore, and a New Task button that opens the full form.">
 <script>
   // Runs before anything else in <head>, including the external libraries
   // below (which block parsing while they load) — otherwise the theme
@@ -804,6 +804,7 @@
   .loc-results{ display:flex; flex-direction:column; gap:4px; margin-top:6px; }
   .loc-result{ text-align:left; background:var(--surface-2); border:1px solid var(--border); color:var(--text-dim); border-radius:7px; padding:7px 10px; font-size:12.5px; }
   .loc-result:hover{ border-color:var(--accent-dim); color:var(--text); }
+  .sync-code{ font-family:var(--mono); font-size:13px; letter-spacing:1px; background:var(--surface-2); border:1px solid var(--border); border-radius:7px; padding:9px 11px; margin-top:6px; color:var(--text); word-break:break-all; }
   .fine{ text-align:center; color:var(--text-faint); font-size:11.5px; margin-top:30px; font-family:var(--mono); }
 
   /* ---------- Celebration: animation, toast, streak badge ---------- */
@@ -1100,18 +1101,22 @@ async function loadState(){
 async function saveTasks(){
   try{ await storageSet('tasks', JSON.stringify(state.tasks)); }catch(e){ console.error('save tasks failed', e); }
   schedulePushSync();
+  scheduleSync();
 }
 async function saveCategories(){
   try{ await storageSet('categories', JSON.stringify(state.categories)); }catch(e){ console.error('save categories failed', e); }
+  scheduleSync();
 }
 async function saveMeta(){
   try{ await storageSet('meta', JSON.stringify(state.meta)); }catch(e){ console.error('save meta failed', e); }
 }
 async function savePeriod(){
   try{ await storageSet('period', JSON.stringify(state.period)); }catch(e){ console.error('save period failed', e); }
+  scheduleSync();
 }
 async function savePlot(){
   try{ await storageSet('plot', JSON.stringify(state.plot)); }catch(e){ console.error('save plot failed', e); }
+  scheduleSync();
 }
 
 /* ============================ DATE HELPERS ============================ */
@@ -1498,7 +1503,7 @@ function generateSeriesOccurrences(seed, seriesId, fromDateStr){
     if(((state.meta.seriesSkips || {})[seriesId] || []).includes(next)){ cursor = next; guard++; continue; }
     if(next > horizonEnd) break;
     created.push({
-      id: genId(), type: seed.type || 'task', title: seed.title, category: seed.category, dueDate: next,
+      id: seriesId + '~' + next, type: seed.type || 'task', title: seed.title, category: seed.category, dueDate: next,
       time: seed.time || '', remindTime: seed.remindTime || '', endTime: seed.endTime || '', leadReminders: Array.isArray(seed.leadReminders) ? seed.leadReminders.slice() : [], notes: seed.notes || '', recurrence: seed.recurrence, seriesId, repeatEvery: seed.repeatEvery || 1, repeatDays: Array.isArray(seed.repeatDays) ? seed.repeatDays.slice() : [], repeatUntil: seed.repeatUntil || '', repeatAnchor: seed.repeatAnchor || seed.dueDate, location: seed.location || '', locationLat: seed.locationLat != null ? seed.locationLat : null, locationLon: seed.locationLon != null ? seed.locationLon : null,
       priority: seed.type==='event' ? false : !!seed.priority, subtasks: [],
       completed: false, completedAt: null, createdAt: todayStr()
@@ -2633,6 +2638,7 @@ function renderSettingsModal(){
       )
     ),
 
+    syncSettingsSection(),
     el('div',{class:'settings-section settings-danger-zone'},
       el('div',{class:'settings-section-title'}, 'Data'),
       el('div',{class:'settings-hint'}, 'For giving someone else a clean copy of this app — clears every task, category, period entry, and preference stored on this device or account.'),
@@ -2877,6 +2883,262 @@ function checkPeriodNotice(){
     }
   }
   render();
+}
+
+/* ============================ SYNC BETWEEN DEVICES ============================ */
+// Each device encrypts its whole dataset with a key derived from a secret code and stores it on the
+// reminder server, which only ever sees scrambled bytes. Devices merge item by item, latest edit wins;
+// deletions are remembered (tombstones) so they don't come back. Nothing here changes how the app
+// stores data locally: changes are detected by comparing each item with what was last synced.
+const SYNC_META_KEYS = ['appName','periodLeadDays','allDayRemindTime','notificationSound'];
+const SYNC_UNION_KEYS = ['seenBadges','wrappedSeenYears','declinedHabitSuggestions'];
+const TOMB_KEEP_MS = 60*86400000;
+const freshSyncState = ()=>({ hashes:{}, tombs:{}, periodU:0, periodHash:'', metaU:0, metaHash:'', version:0, localHash:'', lastSync:0 });
+let syncState = freshSyncState(), syncBusy = false, syncTimer = null, syncApplying = false, syncKeys = null;
+
+function stable(o, keepU){
+  if(Array.isArray(o)) return '[' + o.map(x=>stable(x, keepU)).join(',') + ']';
+  if(o && typeof o === 'object') return '{' + Object.keys(o).filter(k=> keepU || k !== '_u').sort().map(k=>JSON.stringify(k)+':'+stable(o[k], keepU)).join(',') + '}';
+  return JSON.stringify(o === undefined ? null : o);
+}
+function cyrb(str){
+  let h1 = 0xdeadbeef, h2 = 0x41c6ce57;
+  for(let i=0, ch; i < str.length; i++){ ch = str.charCodeAt(i); h1 = Math.imul(h1 ^ ch, 2654435761); h2 = Math.imul(h2 ^ ch, 1597334677); }
+  h1 = Math.imul(h1 ^ (h1>>>16), 2246822507) ^ Math.imul(h2 ^ (h2>>>13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2>>>16), 2246822507) ^ Math.imul(h1 ^ (h1>>>13), 3266489909);
+  return (4294967296 * (2097151 & h2) + (h1>>>0)).toString(36);
+}
+async function loadSyncState(){
+  try{ const s = await storageGet('syncstate'); syncState = s ? Object.assign(freshSyncState(), JSON.parse(s.value)) : freshSyncState(); }
+  catch(e){ syncState = freshSyncState(); }
+}
+async function saveSyncState(){ try{ await storageSet('syncstate', JSON.stringify(syncState)); }catch(e){} }
+function syncAvailable(){
+  return !!(PUSH_SERVER && location.protocol === 'https:' && typeof crypto !== 'undefined' && crypto.subtle);
+}
+
+/* ---- code, keys, encryption ---- */
+function newSyncCode(){
+  const A = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789', r = crypto.getRandomValues(new Uint8Array(24));
+  let s = ''; for(const b of r) s += A[b % 32];
+  return s.match(/.{4}/g).join('-');
+}
+function normCode(c){ return String(c || '').toUpperCase().replace(/[^A-Z0-9]/g, ''); }
+async function deriveSync(code){
+  const te = new TextEncoder(), salt = te.encode('weekly-sync-v1');
+  const base = await crypto.subtle.importKey('raw', te.encode(normCode(code)), 'HKDF', false, ['deriveBits','deriveKey']);
+  const idBits = await crypto.subtle.deriveBits({ name:'HKDF', hash:'SHA-256', salt, info:te.encode('id') }, base, 256);
+  const key = await crypto.subtle.deriveKey({ name:'HKDF', hash:'SHA-256', salt, info:te.encode('key') }, base, { name:'AES-GCM', length:256 }, false, ['encrypt','decrypt']);
+  return { id:[...new Uint8Array(idBits)].map(b=>b.toString(16).padStart(2,'0')).join(''), key };
+}
+async function gzipBytes(bytes, compress){
+  const stream = new Blob([bytes]).stream().pipeThrough(compress ? new CompressionStream('gzip') : new DecompressionStream('gzip'));
+  return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+function toB64(u8){ let s = ''; for(let i=0; i<u8.length; i+=0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i+0x8000)); return btoa(s); }
+function fromB64(s){ return Uint8Array.from(atob(s), c=>c.charCodeAt(0)); }
+async function syncEncrypt(doc, key){
+  let body = new TextEncoder().encode(JSON.stringify(doc)), flag = 0;
+  if(typeof CompressionStream !== 'undefined'){ body = await gzipBytes(body, true); flag = 1; }
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = new Uint8Array(await crypto.subtle.encrypt({ name:'AES-GCM', iv }, key, body));
+  const out = new Uint8Array(13 + ct.length); out[0] = flag; out.set(iv, 1); out.set(ct, 13);
+  return toB64(out);
+}
+async function syncDecrypt(b64, key){
+  const raw = fromB64(b64);
+  let body = new Uint8Array(await crypto.subtle.decrypt({ name:'AES-GCM', iv:raw.subarray(1,13) }, key, raw.subarray(13)));
+  if(raw[0] === 1) body = await gzipBytes(body, false);
+  return JSON.parse(new TextDecoder().decode(body));
+}
+
+/* ---- local data <-> sync document ---- */
+function sharedMeta(){ const d = {}; SYNC_META_KEYS.forEach(k=>{ if(state.meta[k] !== undefined) d[k] = state.meta[k]; }); return d; }
+async function syncStampLocal(){
+  // Notice what changed since the last sync. Changed items get a new edit time; vanished items become tombstones.
+  const now = Date.now(), st = syncState, seen = {};
+  let stamped = 0;
+  state.tasks.forEach(t=>{
+    seen[t.id] = 1;
+    const h = cyrb(stable(t));
+    if(st.hashes[t.id] !== h){ t._u = now; st.hashes[t.id] = h; stamped++; }
+  });
+  Object.keys(st.hashes).forEach(id=>{ if(!seen[id]){ st.tombs[id] = now; delete st.hashes[id]; } });
+  const ph = cyrb(stable(state.period)); if(ph !== st.periodHash){ st.periodHash = ph; st.periodU = now; }
+  const mh = cyrb(stable(sharedMeta())); if(mh !== st.metaHash){ st.metaHash = mh; st.metaU = now; }
+  if(stamped){ syncApplying = true; try{ await saveTasks(); } finally { syncApplying = false; } }
+}
+function buildLocalSyncDoc(){
+  const tasks = {}; state.tasks.forEach(t=>{ tasks[t.id] = t; });
+  const unions = {}; SYNC_UNION_KEYS.forEach(k=>{ unions[k] = Array.isArray(state.meta[k]) ? state.meta[k].slice() : []; });
+  unions.seriesSkips = JSON.parse(JSON.stringify(state.meta.seriesSkips || {}));
+  return { v:1, tasks, tombs:Object.assign({}, syncState.tombs), categories:state.categories.slice(),
+    period:{ u:syncState.periodU, data:state.period }, meta:{ u:syncState.metaU, data:sharedMeta() }, unions, plot:{ log:state.plot.log.slice() } };
+}
+// Pure merge. a = this device, b = the server's copy; on exact ties the server's copy wins.
+function mergeSyncDocs(a, b){
+  const tombs = {};
+  [a.tombs, b.tombs].forEach(m=>Object.keys(m || {}).forEach(id=>{ tombs[id] = Math.max(tombs[id] || 0, m[id]); }));
+  const now = Date.now(); Object.keys(tombs).forEach(id=>{ if(now - tombs[id] > TOMB_KEEP_MS) delete tombs[id]; });
+  const tasks = {};
+  new Set([...Object.keys(a.tasks || {}), ...Object.keys(b.tasks || {})]).forEach(id=>{
+    const x = (a.tasks || {})[id], y = (b.tasks || {})[id];
+    const rec = !x ? y : !y ? x : ((x._u || 0) > (y._u || 0) ? x : y);
+    const tm = tombs[id] || 0;
+    if(tm && (rec._u || 0) <= tm) return;          // deleted after its last edit
+    tasks[id] = rec; if(tm) delete tombs[id];       // edited after the delete: it lives
+  });
+  const categories = [...(b.categories || [])]; (a.categories || []).forEach(c=>{ if(!categories.includes(c)) categories.push(c); });
+  const pick = (x, y)=> !x ? y : !y ? x : ((x.u || 0) > (y.u || 0) ? x : y);
+  const unions = {};
+  SYNC_UNION_KEYS.forEach(k=>{ unions[k] = [...new Set([...((b.unions || {})[k] || []), ...((a.unions || {})[k] || [])])]; });
+  const skips = {};
+  [b, a].forEach(d=>{ const s = (d.unions || {}).seriesSkips || {}; Object.keys(s).forEach(sid=>{ skips[sid] = [...new Set([...(skips[sid] || []), ...s[sid]])]; }); });
+  unions.seriesSkips = skips;
+  const seen = {}, log = [];
+  [...((b.plot || {}).log || []), ...((a.plot || {}).log || [])].forEach(e=>{ const k = e.date + '|' + e.text; if(!seen[k]){ seen[k] = 1; log.push(e); } });
+  return { v:1, tasks, tombs, categories, period:pick(a.period, b.period), meta:pick(a.meta, b.meta), unions, plot:{ log } };
+}
+async function syncApplyDoc(doc, replaceAll){
+  syncApplying = true;
+  try{
+    state.tasks = Object.values(doc.tasks);
+    if(doc.categories && doc.categories.length) state.categories = doc.categories;
+    if(doc.period && doc.period.data && (replaceAll || doc.period.u > syncState.periodU)){
+      state.period = Object.assign({ cycleLength:28, periodLength:5, confirmedStarts:[], dayOverrides:{}, loggedPeriods:[], mode:'cycle', pregnancy:{ dueDate:null }, enabled:false }, doc.period.data);
+    }
+    if(doc.meta && doc.meta.data && (replaceAll || doc.meta.u > syncState.metaU)){
+      SYNC_META_KEYS.forEach(k=>{ if(doc.meta.data[k] !== undefined) state.meta[k] = doc.meta.data[k]; });
+    }
+    SYNC_UNION_KEYS.forEach(k=>{ state.meta[k] = (doc.unions || {})[k] || []; });
+    state.meta.seriesSkips = (doc.unions || {}).seriesSkips || {};
+    state.plot.log = (doc.plot || {}).log || [];
+    migrateTaskFields();
+    const st = syncState;
+    st.hashes = {}; state.tasks.forEach(t=>{ st.hashes[t.id] = cyrb(stable(t)); });
+    st.tombs = doc.tombs || {};
+    st.periodU = doc.period ? doc.period.u : 0; st.periodHash = cyrb(stable(state.period));
+    st.metaU = doc.meta ? doc.meta.u : 0; st.metaHash = cyrb(stable(sharedMeta()));
+    await saveTasks(); await saveCategories(); await savePeriod(); await savePlot(); await saveMeta();
+  } finally { syncApplying = false; }
+  topUpAllSeries();       // after bookkeeping, so anything newly generated counts as a local change next time
+}
+function syncMsg(text){ state.syncStatus = text; }
+
+/* ---- the sync round ---- */
+async function syncNow(manual){
+  if(!state.meta.syncCode || !syncAvailable() || syncBusy) return;
+  syncBusy = true;
+  try{
+    syncKeys = syncKeys || await deriveSync(state.meta.syncCode);
+    for(let attempt = 0; attempt < 3; attempt++){
+      await syncStampLocal();
+      const r = await pushPost('/sync/get', { id:syncKeys.id, have:syncState.version });
+      if(r.status !== 200) throw new Error(r.status === 404 ? 'The reminder server needs its sync update first' : 'the server answered ' + r.status);
+      const local = buildLocalSyncDoc(), localHash = cyrb(stable(local, true));
+      let toPush = null, changedLocally = false;
+      if(r.json.same){
+        if(localHash === syncState.localHash){ syncState.lastSync = Date.now(); await saveSyncState(); break; }
+        toPush = local;
+      } else {
+        const remote = r.json.version > 0 ? await syncDecrypt(r.json.blob, syncKeys.key) : null;
+        const merged = remote ? mergeSyncDocs(local, remote) : local;
+        if(stable(merged, true) !== stable(local, true)){ await syncApplyDoc(merged, false); changedLocally = true; }
+        if(!remote || stable(merged, true) !== stable(remote, true)) toPush = merged;
+        syncState.version = r.json.version;
+      }
+      if(toPush){
+        const blob = await syncEncrypt(toPush, syncKeys.key);
+        const p = await pushPost('/sync/put', { id:syncKeys.id, expected:syncState.version, blob });
+        if(p.status === 409){ syncState.version = p.json.version; continue; }
+        if(p.status !== 200) throw new Error('the server answered ' + p.status);
+        syncState.version = p.json.version;
+      }
+      syncState.localHash = cyrb(stable(buildLocalSyncDoc(), true));
+      syncState.lastSync = Date.now();
+      await saveSyncState();
+      if(changedLocally && !state.modalOpen && !state.settingsOpen && !state.editingAppName) render();
+      break;
+    }
+    if(manual) syncMsg('Synced just now.');
+  }catch(e){
+    console.error('sync failed', e);
+    if(manual) syncMsg('Sync did not work: ' + (e.message || e) + '.');
+  } finally {
+    syncBusy = false;
+    if(manual) render();
+  }
+}
+function scheduleSync(){
+  if(syncApplying || !state.meta.syncCode) return;
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(()=>syncNow(false), 4000);
+}
+async function turnOnSync(){
+  try{
+    const code = newSyncCode();
+    syncKeys = await deriveSync(code);
+    state.meta.syncCode = code; syncState = freshSyncState();
+    await saveMeta();
+    await syncNow(true);
+    if(!state.syncStatus || state.syncStatus.indexOf('did not work') === 0){ state.meta.syncCode = ''; await saveMeta(); }
+    else syncMsg('Sync is on. Join from your other devices with the code below.');
+  }catch(e){ state.meta.syncCode = ''; syncMsg('Could not turn on sync: ' + (e.message || e) + '.'); }
+  state.syncShowCode = true; render();
+}
+async function joinSync(codeText){
+  const code = normCode(codeText);
+  if(code.length !== 24){ syncMsg('That code looks incomplete. It has 24 letters and numbers.'); render(); return; }
+  try{
+    const keys = await deriveSync(code);
+    const r = await pushPost('/sync/get', { id:keys.id, have:-1 });
+    if(r.status === 404) throw new Error('The reminder server needs its sync update first');
+    if(r.status !== 200 || !r.json.version){ syncMsg('No synced data was found for that code. Check it and try again.'); render(); return; }
+    let doc; try{ doc = await syncDecrypt(r.json.blob, keys.key); }catch(e){ syncMsg('That code did not unlock the data.'); render(); return; }
+    if(state.tasks.length && !confirm('Replace what is on this device with your synced data? Save a backup first if you want to keep what is here.')) return;
+    state.meta.syncCode = code; syncKeys = keys; syncState = freshSyncState();
+    await syncApplyDoc(doc, true);
+    syncState.version = r.json.version; syncState.localHash = cyrb(stable(buildLocalSyncDoc(), true)); syncState.lastSync = Date.now();
+    await saveSyncState();
+    syncMsg('Joined. This device now matches your synced data.');
+  }catch(e){ syncMsg('Could not join: ' + (e.message || e) + '.'); }
+  render();
+}
+async function turnOffSync(){
+  const wipe = confirm('Turn off sync on this device?\n\nPress OK to also delete the encrypted copy from the server (other devices will stop syncing). Press Cancel to keep it.') ;
+  try{ if(wipe && syncKeys) await pushPost('/sync/delete', { id:syncKeys.id }); }catch(e){}
+  state.meta.syncCode = ''; syncKeys = null; syncState = freshSyncState();
+  await saveMeta(); await saveSyncState();
+  syncMsg('Sync is off on this device. Your data here is unchanged.'); state.syncShowCode = false; render();
+}
+
+function syncSettingsSection(){
+  const sec = el('div',{class:'settings-section'}, el('div',{class:'settings-section-title'}, 'Sync between devices'));
+  if(!syncAvailable()){
+    sec.appendChild(el('div',{class:'settings-hint'}, location.protocol === 'https:' ? 'Not available in this browser.' : 'Open the app from its web address (https) to use sync. It does not work from a file on your computer.'));
+    return sec;
+  }
+  const btn = (label, fn, primary)=> el('button',{class: primary ? 'settings-action-btn' : 'quickadd-full-btn', onclick: fn}, label);
+  if(!state.meta.syncCode){
+    sec.appendChild(el('div',{class:'settings-hint', style:'margin-bottom:10px;'}, 'Keep your phone and computer in step. Your data is encrypted on this device with a code only you hold; the server stores scrambled data it cannot read. Turn sync on from the device that has your data, then join from the others with the code.'));
+    sec.appendChild(btn('Turn on sync on this device', turnOnSync, true));
+    const codeInput = el('input',{type:'text', placeholder:'Code from your other device', style:'margin-top:12px; width:100%; background:var(--bg); border:1px solid var(--border); color:var(--text); border-radius:7px; padding:9px 11px; font-size:13px; font-family:var(--mono);'});
+    sec.appendChild(codeInput);
+    sec.appendChild(el('div',{style:'margin-top:8px;'}, btn('Join with this code', ()=>joinSync(codeInput.value), false)));
+  } else {
+    const last = syncState.lastSync ? new Date(syncState.lastSync).toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' }) : 'not yet';
+    sec.appendChild(el('div',{class:'settings-hint', style:'margin-bottom:8px;'}, '● Sync is on for this device. Last synced: ' + last + '.'));
+    sec.appendChild(el('div',{class:'settings-hint'}, 'Your code (keep it private; anyone with it can read your data):'));
+    sec.appendChild(el('div',{class:'sync-code'}, state.syncShowCode ? state.meta.syncCode : '••••-••••-••••-••••-••••-••••'));
+    sec.appendChild(el('div',{style:'display:flex; gap:8px; flex-wrap:wrap; margin-top:8px;'},
+      btn(state.syncShowCode ? 'Hide code' : 'Show code', ()=>{ state.syncShowCode = !state.syncShowCode; render(); }, false),
+      btn('Copy code', async ()=>{ try{ await navigator.clipboard.writeText(state.meta.syncCode); syncMsg('Code copied.'); }catch(e){ syncMsg('Could not copy. Show the code and copy it by hand.'); } render(); }, false),
+      btn('Sync now', ()=>syncNow(true), true),
+      btn('Turn off on this device', turnOffSync, false)
+    ));
+  }
+  if(state.syncStatus) sec.appendChild(el('div',{class:'settings-hint', style:'margin-top:10px; color:var(--text);'}, state.syncStatus));
+  return sec;
 }
 
 /* ============================ RELIABLE REMINDERS (WEB PUSH) ============================ */
@@ -4568,6 +4830,7 @@ function renderUpdateBanner(){
 async function init(){
   document.getElementById('app').innerHTML = '<div class="fine" style="padding-top:60px;">Loading…</div>';
   await loadState();
+  await loadSyncState();
   applyTheme(state.meta.theme);
   const fieldsFixed = migrateTaskFields();
   const migrated = migrateLegacyRecurring();
@@ -4578,6 +4841,9 @@ async function init(){
   checkDailyReminder();
   checkWrappedTrigger();
   render();
+  if(state.meta.syncCode){ syncNow(false); }
+  setInterval(()=>{ if(!document.hidden) syncNow(false); }, 60000);
+  document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) syncNow(false); });
   syncPushSchedule(false);
   setInterval(()=>syncPushSchedule(false), 30*60000);
   document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) syncPushSchedule(false); });
