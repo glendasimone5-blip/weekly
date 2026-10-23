@@ -5,10 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob:; connect-src 'self' https://weekly-push.glendasimone5.workers.dev https://nominatim.openstreetmap.org; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
 <title>Weekly — Task Console</title>
-<meta name="app-version" content="2026-10-23a">
+<meta name="app-version" content="2026-10-24a">
 <meta name="push-server" content="https://weekly-push.glendasimone5.workers.dev">
 <meta name="vapid-public" content="BC-oohRYdwdxzqXouwUBrQaCByRvzuUjy8b4DJceMHyCqO3XHOEfJklA7L0F82DayZs8B2XPIiYBkvV8MpSXRt8">
-<meta name="app-notes" content="Reminder popups, period heads-up, start and end check-ins, reminders that work when the app is closed, a wider layout, a full-page Settings, reminders set relative to the event (like 10 minutes before), add-on-selected-day, a Today button and titles in the calendar, editing repeating items (this one, this and following, all), flexible repeats (every N, chosen weekdays, an end date), places on events with address search, sync between your devices (encrypted so the server cannot read it), a connection allow-list, a problem log in Settings, and an optional app lock that encrypts data on the device and locks when idle, a way to change the sync code, encrypted backups (and backups no longer include the sync code), and no outside services (the chart, image and font files now come from this site), event end times, editing completed tasks, a new weekly balance view, backup and restore, and a New Task button that opens the full form.">
+<meta name="app-notes" content="Reminder popups, period heads-up, start and end check-ins, reminders that work when the app is closed, a wider layout, a full-page Settings, reminders set relative to the event (like 10 minutes before), add-on-selected-day, a Today button and titles in the calendar, editing repeating items (this one, this and following, all), flexible repeats (every N, chosen weekdays, an end date), places on events with address search, sync between your devices (encrypted so the server cannot read it), a connection allow-list, a problem log in Settings, and an optional app lock that encrypts data on the device and locks when idle, a way to change the sync code, encrypted backups (and backups no longer include the sync code), and no outside services (the chart, image and font files now come from this site), a welcome screen for new people, privacy policy and terms pages, and a health-information notice before period tracking is switched on, event end times, editing completed tasks, a new weekly balance view, backup and restore, and a New Task button that opens the full form.">
 <script>
   // Runs before anything else in <head>, including the external libraries
   // below (which block parsing while they load) — otherwise the theme
@@ -809,6 +809,16 @@
   .diag-list{ font-family:var(--mono); font-size:10.5px; color:var(--text-dim); line-height:1.6; word-break:break-word; }
   .lock-screen{ margin:14vh auto 0; }
   @font-face{ font-family:'Fraunces'; src:url('vendor/fraunces-latin-full-normal.woff2') format('woff2'); font-weight:100 900; font-style:normal; font-display:swap; }
+  .onb-modal{ max-width:480px; }
+  .onb-dots{ display:flex; gap:6px; margin-bottom:14px; }
+  .onb-dot{ width:8px; height:8px; border-radius:50%; background:var(--border); }
+  .onb-dot.on{ background:var(--accent); }
+  .onb-p{ color:var(--text-dim); font-size:14px; margin-bottom:10px; }
+  .onb-list{ color:var(--text-dim); font-size:13.5px; line-height:1.6; padding-left:1.2em; margin-bottom:14px; }
+  .onb-list li{ margin:5px 0; }
+  .onb-agree{ display:flex; gap:6px; align-items:flex-start; font-size:12.5px; color:var(--text-dim); line-height:1.5; margin-bottom:6px; cursor:pointer; }
+  .onb-agree input{ margin-top:3px; }
+  .onb-actions{ display:flex; gap:8px; flex-wrap:wrap; margin-top:16px; }
   .fine{ text-align:center; color:var(--text-faint); font-size:11.5px; margin-top:30px; font-family:var(--mono); }
 
   /* ---------- Celebration: animation, toast, streak badge ---------- */
@@ -2404,11 +2414,12 @@ function render(){
     app.appendChild(renderReportView());
   }
 
-  app.appendChild(el('div',{class:'fine'}, '◆ '+(state.meta.appName||'WEEKLY')+' — your task console · saving via ' + (hasCloudStorage ? 'Claude.ai storage' : 'this browser (localStorage)')));
+  app.appendChild(el('div',{class:'fine'}, '◆ '+(state.meta.appName||'WEEKLY')+' — your task console · saving via ' + (hasCloudStorage ? 'Claude.ai storage' : 'this browser (localStorage)') + ' · ', legalLink('Privacy','privacy.html'), ' · ', legalLink('Terms','terms.html')));
 
   if(state.toast){ app.appendChild(el('div',{class:'toast'}, state.toast.text)); }
 
   if(state.scopeDialog){ app.appendChild(renderScopeDialog()); }
+  if(state.showOnboarding){ app.appendChild(renderOnboarding()); }
   if(reminderPopups.length){ app.appendChild(renderReminderPopups()); }
   if(state.modalOpen){ app.appendChild(renderModal()); }
   if(state.showWrappedIntro){ app.appendChild(renderWrappedModal()); }
@@ -2702,7 +2713,7 @@ function renderSettingsModal(){
       el('div',{class:'settings-section-title'}, 'Health Tracking'),
       el('label',{class:'settings-toggle-row'},
         el('input',{type:'checkbox', ...(state.period.enabled?{checked:'checked'}:{}),
-          onchange:(e)=>{ state.period.enabled = e.target.checked; savePeriod(); render(); }
+          onchange:(e)=>{ togglePeriodTracking(e.target.checked); }
         }),
         ' Period & cycle tracking'
       ),
@@ -2729,6 +2740,7 @@ function renderSettingsModal(){
     lockSettingsSection(),
     syncSettingsSection(),
     diagnosticsSection(),
+    aboutSection(),
     el('div',{class:'settings-section settings-danger-zone'},
       el('div',{class:'settings-section-title'}, 'Data'),
       el('div',{class:'settings-hint'}, 'For giving someone else a clean copy of this app — clears every task, category, period entry, and preference stored on this device or account.'),
@@ -3478,6 +3490,81 @@ function lockSettingsSection(){
   }
   if(state.lockStatus) sec.appendChild(el('div',{class:'settings-hint', style:'margin-top:10px; color:var(--text);'}, state.lockStatus));
   return sec;
+}
+
+/* ============================ WELCOME, LEGAL LINKS, HEALTH NOTICE ============================ */
+// First-run welcome for new people (existing users are quietly marked as done), a one-time notice before health
+// tracking is switched on, and links to the policy pages that are published alongside the app.
+function legalLink(label, href){ return el('a',{href, target:'_blank', rel:'noopener', style:'color:var(--accent); text-decoration:underline;'}, label); }
+function checkOnboarding(){
+  if(state.meta.onboarded) return;
+  if(state.tasks.length || state.period.enabled || (state.period.loggedPeriods || []).length || state.meta.syncCode){
+    state.meta.onboarded = true; saveMeta(); return;
+  }
+  state.showOnboarding = true; state.onb = { step:1, agree:false, name:'' };
+  render();
+}
+function finishOnboarding(openSettings){
+  state.showOnboarding = false;
+  state.meta.onboarded = true; state.meta.termsAccepted = new Date().toISOString().slice(0,10);
+  saveMeta();
+  if(openSettings) state.settingsOpen = true;
+  render();
+}
+function togglePeriodTracking(on){
+  if(on && !state.meta.healthNoticeAccepted){
+    const ok = confirm('Period and pregnancy tracking uses health information.\n\n• It stays on this device. It only leaves if you choose encrypted sync or save a backup.\n• We cannot see it.\n• Predictions are estimates from averages. They are not medical advice and must not be used as contraception.\n\nTurn it on?');
+    if(!ok){ render(); return; }
+    state.meta.healthNoticeAccepted = new Date().toISOString().slice(0,10); saveMeta();
+  }
+  state.period.enabled = on; savePeriod(); render();
+}
+function renderOnboarding(){
+  const o = state.onb;
+  const dots = el('div',{class:'onb-dots'}, [1,2,3].map(n=>el('span',{class:'onb-dot'+(n === o.step ? ' on' : '')})));
+  const btn = (label, fn, primary, disabled)=> el('button',{class: primary ? 'settings-action-btn' : 'quickadd-full-btn', onclick: fn, ...(disabled ? { disabled:'disabled', style:'opacity:0.5; cursor:not-allowed;' } : {})}, label);
+  let body, actions;
+  if(o.step === 1){
+    body = el('div',{},
+      el('h2',{}, 'Welcome to Weekly'),
+      el('p',{class:'onb-p'}, 'A calm planner for your tasks, events and calendar.'),
+      el('ul',{class:'onb-list'},
+        el('li',{}, 'Your plans stay on your own device. There are no accounts and no tracking.'),
+        el('li',{}, 'Syncing between devices is optional, and encrypted so only you can read it.'),
+        el('li',{}, 'Period tracking is optional and private, and it is off until you turn it on.')),
+      el('label',{class:'onb-agree'},
+        el('input',{type:'checkbox', ...(o.agree ? {checked:'checked'} : {}), onchange:(e)=>{ o.agree = e.target.checked; render(); }}),
+        el('span',{}, ' I am 13 or over (or a parent or guardian has set this up for me), and I agree to the ', legalLink('Terms of use','terms.html'), ' and have read the ', legalLink('Privacy policy','privacy.html'), '.')));
+    actions = [ btn('Get started', ()=>{ o.step = 2; render(); }, true, !o.agree), btn('I already use Weekly on another device', ()=>finishOnboarding(true), false, !o.agree) ];
+  } else if(o.step === 2){
+    const nameInput = el('input',{type:'text', value:o.name, maxlength:'40', placeholder:'Name for your planner (optional)', oninput:(e)=>{ o.name = e.target.value; }});
+    body = el('div',{},
+      el('h2',{}, 'Make it yours'),
+      el('div',{class:'field'}, nameInput),
+      el('div',{class:'settings-section-title'}, 'Theme'),
+      renderThemeSwatchGrid(),
+      el('label',{class:'settings-toggle-row', style:'margin-top:14px;'},
+        el('input',{type:'checkbox', ...(state.period.enabled ? {checked:'checked'} : {}), onchange:(e)=>{ togglePeriodTracking(e.target.checked); }}),
+        ' Track periods and cycles (optional)'));
+    actions = [ btn('Back', ()=>{ o.step = 1; render(); }, false), btn('Next', ()=>{ if(o.name.trim()) renameApp(o.name); o.step = 3; render(); }, true) ];
+  } else {
+    body = el('div',{},
+      el('h2',{}, 'A few things worth knowing'),
+      el('ul',{class:'onb-list'},
+        el('li',{}, '“+ Add” makes a task or an event. Events can have a time and a place.'),
+        el('li',{}, 'The Calendar tab shows the month. Click a day to see it or add to it.'),
+        el('li',{}, 'In Settings (⚙): reminders that work when the app is closed, sync between devices, an app lock, and backups.'),
+        el('li',{}, 'Your data lives on this device. Save a backup now and then, in Settings.')));
+    actions = [ btn('Back', ()=>{ o.step = 2; render(); }, false), btn('Start planning', ()=>finishOnboarding(false), true) ];
+  }
+  return el('div',{class:'overlay'}, el('div',{class:'modal onb-modal'}, dots, body, el('div',{class:'onb-actions'}, actions)));
+}
+function aboutSection(){
+  return el('div',{class:'settings-section'},
+    el('div',{class:'settings-section-title'}, 'About and legal'),
+    el('div',{class:'settings-hint', style:'margin-bottom:8px;'}, 'Version ' + (APP_VERSION || 'unknown') + (state.meta.termsAccepted ? ' · terms accepted ' + state.meta.termsAccepted : '')),
+    el('div',{style:'display:flex; gap:14px; flex-wrap:wrap;'}, legalLink('Privacy policy','privacy.html'), legalLink('Terms of use','terms.html')),
+    el('div',{class:'settings-hint', style:'margin-top:10px;'}, 'Your data lives on your devices. To erase it, use “Reset all data” below, and if you use sync, turn sync off and choose to delete the server copy.'));
 }
 
 /* ============================ RELIABLE REMINDERS (WEB PUSH) ============================ */
@@ -5187,6 +5274,7 @@ async function initLegacy(){
   checkDailyReminder();
   checkWrappedTrigger();
   render();
+  checkOnboarding();
   if(state.meta.syncCode){ syncNow(false); }
   setInterval(()=>{ if(!document.hidden) syncNow(false); }, 60000);
   document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) syncNow(false); });
