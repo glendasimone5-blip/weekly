@@ -5,10 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob:; connect-src 'self' https://weekly-push.glendasimone5.workers.dev https://nominatim.openstreetmap.org; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
 <title>Weekly — Task Console</title>
-<meta name="app-version" content="2026-10-24a">
+<meta name="app-version" content="2026-10-25a">
 <meta name="push-server" content="https://weekly-push.glendasimone5.workers.dev">
 <meta name="vapid-public" content="BC-oohRYdwdxzqXouwUBrQaCByRvzuUjy8b4DJceMHyCqO3XHOEfJklA7L0F82DayZs8B2XPIiYBkvV8MpSXRt8">
-<meta name="app-notes" content="Reminder popups, period heads-up, start and end check-ins, reminders that work when the app is closed, a wider layout, a full-page Settings, reminders set relative to the event (like 10 minutes before), add-on-selected-day, a Today button and titles in the calendar, editing repeating items (this one, this and following, all), flexible repeats (every N, chosen weekdays, an end date), places on events with address search, sync between your devices (encrypted so the server cannot read it), a connection allow-list, a problem log in Settings, and an optional app lock that encrypts data on the device and locks when idle, a way to change the sync code, encrypted backups (and backups no longer include the sync code), and no outside services (the chart, image and font files now come from this site), a welcome screen for new people, privacy policy and terms pages, and a health-information notice before period tracking is switched on, event end times, editing completed tasks, a new weekly balance view, backup and restore, and a New Task button that opens the full form.">
+<meta name="app-notes" content="Reminder popups, period heads-up, start and end check-ins, reminders that work when the app is closed, a wider layout, a full-page Settings, reminders set relative to the event (like 10 minutes before), add-on-selected-day, a Today button and titles in the calendar, editing repeating items (this one, this and following, all), flexible repeats (every N, chosen weekdays, an end date), places on events with address search, sync between your devices (encrypted so the server cannot read it), a connection allow-list, a problem log in Settings, and an optional app lock that encrypts data on the device and locks when idle, a way to change the sync code, encrypted backups (and backups no longer include the sync code), and no outside services (the chart, image and font files now come from this site), a welcome screen for new people, privacy policy and terms pages, and a health-information notice before period tracking is switched on, a layout built for phones (forms that scroll, bigger touch targets, a scrolling tab bar), and a friendly page-not-found screen, event end times, editing completed tasks, a new weekly balance view, backup and restore, and a New Task button that opens the full form.">
 <script>
   // Runs before anything else in <head>, including the external libraries
   // below (which block parsing while they load) — otherwise the theme
@@ -944,6 +944,74 @@
   .chip.active{ background:var(--surface-2); border-color:var(--accent-dim); color:var(--text); }
   .chip .cat-swatch{ margin-right:0; }
   .chip .count{ font-family:var(--mono); font-size:10.5px; color:var(--text-faint); }
+  /* ---------- Mobile, touch and accessibility ---------- */
+  html{ -webkit-text-size-adjust:100%; }
+  button, a, .cat-item, .calendar-cell{ touch-action:manipulation; }
+  button:focus-visible, a:focus-visible, select:focus-visible, summary:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+  @media (prefers-reduced-motion: reduce){ *{ animation:none !important; transition:none !important; } }
+
+  /* A form taller than the screen must scroll, not get cut off; a short one stays centred. */
+  .overlay{ overflow-y:auto; align-items:flex-start; }
+  .overlay > .modal, .overlay > .wrapped-modal{ margin:auto; }
+  .settings-modal.settings-page{ grid-template-columns:repeat(auto-fit, minmax(min(340px, 100%), 1fr)); }
+
+  @media (pointer:coarse){
+    input, select, textarea{ font-size:16px !important; }     /* stops phones zooming in when a field is tapped */
+    .task-actions button{ min-width:40px; min-height:40px; font-size:16px; }
+    .calendar-header button, .week-nav button, .date-popover-header button, .period-toggle-btn{ width:38px; height:38px; font-size:15px; }
+    .calendar-header .calendar-today-btn{ width:auto; height:38px; }
+    .checkbox, .event-marker{ width:26px; height:26px; }
+    .subtask-checkbox{ width:22px; height:22px; font-size:12px; }
+    .cat-item{ padding:11px 10px; }
+    .lead-chip, .type-toggle-btn, .quickadd-btn, .quickadd-full-btn, .settings-action-btn, .modal-actions button, .period-primary-btn, .period-secondary-btn, .sound-option{ min-height:42px; }
+    .date-popover-cell{ font-size:13px; }
+    nav.tabs button{ padding:11px 14px; }
+  }
+
+  @media (max-width:760px){
+    #app{ padding:12px 12px max(70px, env(safe-area-inset-bottom)); overflow-x:clip; }
+    header.top{ gap:10px; padding-bottom:12px; margin-bottom:14px; align-items:center; }
+    .brand{ flex:1 1 auto; min-width:0; }
+    .brand h1{ font-size:26px; }
+    nav.tabs{ order:3; flex:0 0 100%; max-width:100%; overflow-x:auto; flex-wrap:nowrap; scrollbar-width:none; -webkit-overflow-scrolling:touch; }
+    nav.tabs::-webkit-scrollbar{ display:none; }
+    nav.tabs button{ flex:0 0 auto; white-space:nowrap; padding:8px 14px; }
+    .search-wrap{ order:4; flex:0 0 100%; max-width:none; }
+    .level-badge, .streak-badge{ display:none; }          /* the same numbers appear in the summary strip below */
+    .plot-btn{ width:44px; height:44px; font-size:19px; }
+    .pulse-wrap{ padding:12px; gap:10px; margin-bottom:14px; }
+    .pulse-balance-main{ min-width:0; }
+    .dashboard-strip{ margin-bottom:10px; }
+    .today-panel, .priority-panel{ padding:12px; }
+    .layout{ gap:12px; }
+    .sidebar{ position:static; padding:12px; margin-bottom:2px; }
+    .calendar-widget:not(.big-calendar-widget), .calendar-placement-row, .sidebar .new-task-btn, .cat-progress-box{ display:none; }
+    .cat-list{ flex-direction:row; flex-wrap:wrap; gap:6px; }
+    .cat-item{ border:1px solid var(--border); border-radius:999px; padding:6px 12px; gap:8px; }
+    .cat-item.active{ border-color:var(--accent-dim); }
+    .week-nav{ margin-bottom:10px; }
+    .big-calendar-layout{ gap:14px; }
+    .big-calendar-widget{ padding:12px; }
+    .big-calendar-grid{ gap:3px; }
+    .big-calendar-cell{ min-height:48px; padding:3px; }
+    .big-calendar-cell .calendar-daynum{ font-size:12px; }
+    .calendar-side-panel{ position:static; padding:14px; }
+    .modal{ padding:18px; }
+    .overlay{ padding:12px; }
+    .plot-popover{ position:fixed; top:72px; left:12px; right:12px; width:auto; }
+    .toast{ left:12px; right:12px; bottom:max(12px, env(safe-area-inset-bottom)); max-width:none; }
+    .reminder-popups{ top:10px; left:10px; right:10px; width:auto; }
+    .fine{ margin-top:20px; }
+  }
+  @media (max-width:900px){
+    .task{ flex-wrap:wrap; padding:10px 12px; gap:8px 10px; }
+    .task-body{ flex:1 1 0; min-width:0; }
+    .task-actions{ flex:0 0 100%; justify-content:flex-end; gap:2px; margin-top:-4px; }
+  }
+  @media (max-width:520px){
+    .share-stats-row{ grid-template-columns:repeat(2, 1fr); }
+    .wrapped-card, .share-card{ padding:18px; }
+  }
 </style>
 </head>
 <body>
