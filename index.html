@@ -5,10 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob:; connect-src 'self' https://weekly-push.glendasimone5.workers.dev https://nominatim.openstreetmap.org; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
 <title>Weekly — Task Console</title>
-<meta name="app-version" content="2026-10-26a">
+<meta name="app-version" content="2026-10-27a">
 <meta name="push-server" content="https://weekly-push.glendasimone5.workers.dev">
 <meta name="vapid-public" content="BC-oohRYdwdxzqXouwUBrQaCByRvzuUjy8b4DJceMHyCqO3XHOEfJklA7L0F82DayZs8B2XPIiYBkvV8MpSXRt8">
-<meta name="app-notes" content="Reminder popups, period heads-up, start and end check-ins, reminders that work when the app is closed, a wider layout, a full-page Settings, reminders set relative to the event (like 10 minutes before), add-on-selected-day, a Today button and titles in the calendar, editing repeating items (this one, this and following, all), flexible repeats (every N, chosen weekdays, an end date), places on events with address search, sync between your devices (encrypted so the server cannot read it), a connection allow-list, a problem log in Settings, and an optional app lock that encrypts data on the device and locks when idle, a way to change the sync code, encrypted backups (and backups no longer include the sync code), and no outside services (the chart, image and font files now come from this site), a welcome screen for new people, privacy policy and terms pages, and a health-information notice before period tracking is switched on, a layout built for phones (forms that scroll, bigger touch targets, a scrolling tab bar), and a friendly page-not-found screen, event end times, editing completed tasks, a new weekly balance view, backup and restore, a New Task button that opens the full form, and UK-style dates, 24-hour time and a choice of Monday or Sunday as the first day of the week.">
+<meta name="app-notes" content="Reminder popups, period heads-up, start and end check-ins, reminders that work when the app is closed, a wider layout, a full-page Settings, reminders set relative to the event (like 10 minutes before), add-on-selected-day, a Today button and titles in the calendar, editing repeating items (this one, this and following, all), flexible repeats (every N, chosen weekdays, an end date), places on events with address search, sync between your devices (encrypted so the server cannot read it), a connection allow-list, a problem log in Settings, and an optional app lock that encrypts data on the device and locks when idle, a way to change the sync code, encrypted backups (and backups no longer include the sync code), and no outside services (the chart, image and font files now come from this site), a welcome screen for new people, privacy policy and terms pages, and a health-information notice before period tracking is switched on, a layout built for phones (forms that scroll, bigger touch targets, a scrolling tab bar), and a friendly page-not-found screen, event end times, editing completed tasks, a new weekly balance view, backup and restore, a New Task button that opens the full form, and UK-style dates, 24-hour time and a choice of Monday or Sunday as the first day of the week, plus calmer wording in the Report insights.">
 <script>
   // Runs before anything else in <head>, including the external libraries
   // below (which block parsing while they load) — otherwise the theme
@@ -2198,8 +2198,8 @@ function computeInsights(){
   if(thisWk && lastWk && thisWk.hasData && lastWk.hasData){
     const delta = thisWk.rate - lastWk.rate;
     if(delta !== 0){
-      insights.push({ icon: delta>0?'▲':'▼', tone: delta>0?'good':'bad',
-        text: `Completion is ${Math.abs(delta)}% ${delta>0?'up':'down'} from last week — ${lastWk.rate}% → ${thisWk.rate}%.` });
+      insights.push({ icon: delta>0?'▲':'◦', tone: delta>0?'good':'neutral',
+        text: `${thisWk.rate}% of this week's tasks are done so far, compared with ${lastWk.rate}% last week.` });
     } else {
       insights.push({ icon:'■', tone:'neutral', text:`Completion held steady at ${thisWk.rate}% this week.` });
     }
@@ -2216,7 +2216,7 @@ function computeInsights(){
     insights.push({ icon:'★', tone:'good', text:`${best.cat} is your strongest category — ${best.rate}% completed on time.` });
     const worst = catStats.slice().sort((a,b)=>a.rate-b.rate)[0];
     if(worst.cat !== best.cat && worst.rate < 70){
-      insights.push({ icon:'⚠', tone:'bad', text:`${worst.cat} tends to slip — only ${worst.rate}% completed on time.` });
+      insights.push({ icon:'○', tone:'neutral', text:`${worst.cat} tasks are finished on time ${worst.rate}% of the time.` });
     }
   }
 
@@ -2229,7 +2229,7 @@ function computeInsights(){
   });
   const maxCount = Math.max(...dayCounts);
   if(maxCount >= 2){
-    insights.push({ icon:'◐', tone:'bad', text:`${dayNames7[dayCounts.indexOf(maxCount)]} tasks are most likely to run late — ${maxCount} so far.` });
+    insights.push({ icon:'◐', tone:'neutral', text:`Tasks due on ${dayNames7[dayCounts.indexOf(maxCount)]}s are most often finished late (${maxCount} so far), so a lighter ${dayNames7[dayCounts.indexOf(maxCount)]} might help.` });
   }
 
   // Average time-to-close
