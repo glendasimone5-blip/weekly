@@ -5,10 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob:; connect-src 'self' https://weekly-push.glendasimone5.workers.dev https://nominatim.openstreetmap.org; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
 <title>Weekly — Task Console</title>
-<meta name="app-version" content="2026-10-27a">
+<meta name="app-version" content="2026-10-28a">
 <meta name="push-server" content="https://weekly-push.glendasimone5.workers.dev">
 <meta name="vapid-public" content="BC-oohRYdwdxzqXouwUBrQaCByRvzuUjy8b4DJceMHyCqO3XHOEfJklA7L0F82DayZs8B2XPIiYBkvV8MpSXRt8">
-<meta name="app-notes" content="Reminder popups, period heads-up, start and end check-ins, reminders that work when the app is closed, a wider layout, a full-page Settings, reminders set relative to the event (like 10 minutes before), add-on-selected-day, a Today button and titles in the calendar, editing repeating items (this one, this and following, all), flexible repeats (every N, chosen weekdays, an end date), places on events with address search, sync between your devices (encrypted so the server cannot read it), a connection allow-list, a problem log in Settings, and an optional app lock that encrypts data on the device and locks when idle, a way to change the sync code, encrypted backups (and backups no longer include the sync code), and no outside services (the chart, image and font files now come from this site), a welcome screen for new people, privacy policy and terms pages, and a health-information notice before period tracking is switched on, a layout built for phones (forms that scroll, bigger touch targets, a scrolling tab bar), and a friendly page-not-found screen, event end times, editing completed tasks, a new weekly balance view, backup and restore, a New Task button that opens the full form, and UK-style dates, 24-hour time and a choice of Monday or Sunday as the first day of the week, plus calmer wording in the Report insights.">
+<meta name="app-notes" content="Reminder popups, period heads-up, start and end check-ins, reminders that work when the app is closed, a wider layout, a full-page Settings, reminders set relative to the event (like 10 minutes before), add-on-selected-day, a Today button and titles in the calendar, editing repeating items (this one, this and following, all), flexible repeats (every N, chosen weekdays, an end date), places on events with address search, sync between your devices (encrypted so the server cannot read it), a connection allow-list, a problem log in Settings, and an optional app lock that encrypts data on the device and locks when idle, a way to change the sync code, encrypted backups (and backups no longer include the sync code), and no outside services (the chart, image and font files now come from this site), a welcome screen for new people, privacy policy and terms pages, and a health-information notice before period tracking is switched on, a layout built for phones (forms that scroll, bigger touch targets, a scrolling tab bar), and a friendly page-not-found screen, event end times, editing completed tasks, a new weekly balance view, backup and restore, a New Task button that opens the full form, and UK-style dates, 24-hour time and a choice of Monday or Sunday as the first day of the week, plus calmer wording in the Report insights, and Week and Day views on the Calendar tab.">
 <script>
   // Runs before anything else in <head>, including the external libraries
   // below (which block parsing while they load) — otherwise the theme
@@ -819,6 +819,41 @@
   .onb-agree{ display:flex; gap:6px; align-items:flex-start; font-size:12.5px; color:var(--text-dim); line-height:1.5; margin-bottom:6px; cursor:pointer; }
   .onb-agree input{ margin-top:3px; }
   .onb-actions{ display:flex; gap:8px; flex-wrap:wrap; margin-top:16px; }
+  /* Calendar views: Month | Week | Day */
+  .cal-views{ min-width:0; }
+  .cal-viewbar{ display:flex; flex-wrap:wrap; align-items:center; gap:10px 14px; margin:0 0 14px; }
+  .cal-seg{ display:inline-flex; border:1px solid var(--border); border-radius:10px; overflow:hidden; }
+  .cal-seg button{ background:transparent; color:var(--text-dim); border:0; padding:8px 16px; min-height:40px; font:inherit; cursor:pointer; }
+  .cal-seg button[aria-pressed="true"]{ background:var(--accent); color:var(--on-accent); }
+  .cal-nav{ display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+  .cal-nav button{ background:var(--surface-2); color:var(--text); border:1px solid var(--border); border-radius:8px; padding:6px 12px; min-height:40px; font:inherit; cursor:pointer; }
+  .cal-nav-label{ font-weight:600; padding:0 6px; }
+  .tl-wrap{ overflow-x:auto; border:1px solid var(--border); border-radius:12px; background:var(--surface); }
+  .tl-inner.week{ min-width:660px; }
+  .tl-row{ display:grid; grid-template-columns:52px repeat(var(--n), minmax(0, 1fr)); }
+  .tl-headcell{ background:transparent; color:var(--text-dim); border:0; border-left:1px solid var(--border); padding:8px 4px; font:inherit; font-size:12px; text-align:center; }
+  button.tl-headcell{ cursor:pointer; }
+  .tl-headcell.today{ color:var(--text); font-weight:700; }
+  .tl-headcell .num{ display:block; font-size:18px; }
+  .tl-allday{ border-top:1px solid var(--border); border-bottom:1px solid var(--border); }
+  .tl-gutter-label{ font-family:var(--mono); font-size:10px; color:var(--text-faint); padding:6px 6px 0 0; text-align:right; }
+  .tl-cell{ border-left:1px solid var(--border); padding:4px; display:flex; flex-direction:column; gap:3px; min-width:0; }
+  .tl-chip{ font:inherit; font-size:11px; text-align:left; color:var(--text-dim); background:var(--surface-2); border:0; border-left:3px solid var(--text-faint); border-radius:3px; padding:3px 6px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; cursor:pointer; }
+  .tl-chip.ev{ font-weight:600; color:var(--text); }
+  .tl-chip.done{ text-decoration:line-through; opacity:0.6; }
+  .tl-scroll{ max-height:68vh; overflow-y:auto; }
+  .tl-grid{ padding-top:8px; }
+  .tl-gutter{ position:relative; }
+  .tl-hour{ position:absolute; right:6px; transform:translateY(-50%); font-family:var(--mono); font-size:10px; color:var(--text-faint); }
+  .tl-col{ position:relative; border-left:1px solid var(--border); background-image:linear-gradient(to bottom, var(--border) 1px, transparent 1px); background-size:100% 48px; }
+  .tl-block{ position:absolute; box-sizing:border-box; display:flex; gap:6px; align-items:baseline; overflow:hidden; white-space:nowrap; background:var(--surface-2); color:var(--text); border:0; border-left:3px solid var(--text-faint); border-radius:5px; padding:2px 6px; font:inherit; font-size:12px; text-align:left; cursor:pointer; }
+  .tl-block.tall{ flex-direction:column; gap:0; white-space:normal; }
+  .tl-block.ev{ background:var(--accent-glow); font-weight:600; }
+  .tl-block.done{ opacity:0.6; text-decoration:line-through; }
+  .tl-block-time{ font-family:var(--mono); font-size:10.5px; font-weight:400; color:var(--text-dim); flex:0 0 auto; }
+  .tl-block-title{ min-width:0; overflow:hidden; text-overflow:ellipsis; }
+  .tl-now{ position:absolute; left:0; right:0; height:2px; background:var(--accent); pointer-events:none; }
+  .tl-block:focus-visible, .tl-chip:focus-visible, .tl-headcell:focus-visible, .cal-seg button:focus-visible, .cal-nav button:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
   .fine{ text-align:center; color:var(--text-faint); font-size:11.5px; margin-top:30px; font-family:var(--mono); }
 
   /* ---------- Celebration: animation, toast, streak badge ---------- */
@@ -4013,7 +4048,126 @@ function renderCalendarSidePanel(){
   return panel;
 }
 
+/* ---- Calendar: Month | Week | Day ---- */
+const CAL_PPH = 48; // pixels per hour on the timeline (the stylesheet's hour lines use the same number)
+let calScrollTop = null;
+function calViewMode(){
+  const v = state.meta && state.meta.calView;
+  if(v === 'month' || v === 'week' || v === 'day') return v;
+  try{ return window.matchMedia('(max-width: 760px)').matches ? 'day' : 'month'; }catch(e){ return 'month'; }
+}
+function setCalView(v){ state.meta.calView = v; calScrollTop = null; saveMeta(); render(); }
+function calGoto(ds){ state.calendarSelectedDate = ds; calScrollTop = null; render(); }
+function calShift(days){ const d = parseDate(state.calendarSelectedDate || todayStr()); d.setDate(d.getDate() + days); calGoto(fmt(d)); }
+function calWeekDays(ds){
+  const d = parseDate(ds); d.setDate(d.getDate() - ((d.getDay() + 7 - weekStartDow()) % 7));
+  return Array.from({length:7}, (_, i)=>{ const x = new Date(d); x.setDate(d.getDate() + i); return x; });
+}
+function calToMin(tm){ const p = String(tm).split(':').map(Number); return p[0] * 60 + (p[1] || 0); }
+function calSpan(t){
+  const s = calToMin(t.time);
+  let e = t.endTime ? calToMin(t.endTime) : s + (t.type === 'event' ? 60 : 30);
+  if(e <= s) e = t.endTime ? 24 * 60 : s + 30; // an end before the start runs to midnight
+  return [s, Math.min(e, 24 * 60)];
+}
+function calLanes(items){ // side-by-side lanes for items that overlap in time
+  const out = []; let cluster = [], clusterEnd = -1;
+  const flush = ()=>{ const n = Math.max(1, ...cluster.map(x=>x.lane + 1)); cluster.forEach(x=>{ x.lanes = n; }); out.push(...cluster); cluster = []; clusterEnd = -1; };
+  items.slice().sort((a, b)=>a.s - b.s || a.e - b.e).forEach(it=>{
+    if(cluster.length && it.s >= clusterEnd) flush();
+    const used = new Set(cluster.filter(x=>x.e > it.s).map(x=>x.lane));
+    let lane = 0; while(used.has(lane)) lane++;
+    it.lane = lane; cluster.push(it); clusterEnd = Math.max(clusterEnd, it.e);
+  });
+  if(cluster.length) flush();
+  return out;
+}
+function calHourLabel(h){ return use24h() ? String(h % 24).padStart(2, '0') + ':00' : ((h % 12 === 0 ? 12 : h % 12) + (h % 24 >= 12 ? ' PM' : ' AM')); }
+function renderCalViewBar(mode){
+  const sel = state.calendarSelectedDate || todayStr();
+  const seg = el('div', {class:'cal-seg', role:'group', 'aria-label':'Calendar view'},
+    [['month', 'Month'], ['week', 'Week'], ['day', 'Day']].map(([v, label])=>
+      el('button', {type:'button', 'aria-pressed': mode === v ? 'true' : 'false', onclick:()=>{ if(mode !== v) setCalView(v); }}, label)));
+  const bar = el('div', {class:'cal-viewbar'}, seg);
+  if(mode !== 'month'){
+    const d = parseDate(sel), loc = dateLocale();
+    let label;
+    if(mode === 'day') label = d.toLocaleDateString(loc, {weekday:'long', day:'numeric', month:'long'});
+    else { const w = calWeekDays(sel); label = w[0].toLocaleDateString(loc, {day:'numeric', month:'short'}) + ' – ' + w[6].toLocaleDateString(loc, {day:'numeric', month:'short'}); }
+    const step = mode === 'day' ? 1 : 7, unit = mode === 'day' ? 'day' : 'week';
+    bar.appendChild(el('div', {class:'cal-nav'},
+      el('button', {type:'button', 'aria-label':'Previous ' + unit, onclick:()=>calShift(-step)}, '‹'),
+      el('span', {class:'cal-nav-label'}, label),
+      el('button', {type:'button', 'aria-label':'Next ' + unit, onclick:()=>calShift(step)}, '›'),
+      el('button', {type:'button', onclick:()=>calGoto(todayStr())}, 'Today')));
+    if(mode === 'day') bar.appendChild(el('button', {type:'button', class:'settings-action-btn', onclick:()=>{ state.calendarSelectedDate = sel; state.editingTask = null; state.modalOpen = true; render(); }}, '+ Add on this day'));
+  }
+  return bar;
+}
+function renderCalTimeline(mode){
+  const sel = state.calendarSelectedDate || todayStr(), today = todayStr();
+  const days = mode === 'day' ? [parseDate(sel)] : calWeekDays(sel);
+  const per = days.map(d=>{
+    const ds = fmt(d), items = state.tasks.filter(t=>t.dueDate === ds).sort(compareDayItems);
+    const timed = items.filter(t=>t.time).map(t=>{ const sp = calSpan(t); return { t, s:sp[0], e:sp[1] }; });
+    return { d, ds, untimed: items.filter(t=>!t.time), timed: calLanes(timed) };
+  });
+  let lo = 7, hi = 21;
+  per.forEach(p=>p.timed.forEach(x=>{ lo = Math.min(lo, Math.floor(x.s / 60)); hi = Math.max(hi, Math.ceil(x.e / 60)); }));
+  hi = Math.min(hi, 24);
+  const loc = dateLocale(), n = days.length, inner = el('div', {class:'tl-inner' + (mode === 'week' ? ' week' : ''), style:'--n:' + n});
+
+  const head = el('div', {class:'tl-row tl-head'}, el('div', {}));
+  per.forEach(p=>{
+    const cls = 'tl-headcell' + (p.ds === today ? ' today' : '');
+    const inside = [el('span', {}, p.d.toLocaleDateString(loc, {weekday:'short'})), el('span', {class:'num'}, p.d.getDate())];
+    head.appendChild(mode === 'week'
+      ? el('button', {type:'button', class:cls, 'aria-label':p.d.toLocaleDateString(loc, {weekday:'long', day:'numeric', month:'long'}) + ', open day', onclick:()=>{ state.meta.calView = 'day'; saveMeta(); calGoto(p.ds); }}, inside)
+      : el('div', {class:cls}, inside));
+  });
+  inner.appendChild(head);
+
+  if(per.some(p=>p.untimed.length)){
+    const row = el('div', {class:'tl-row tl-allday'}, el('div', {class:'tl-gutter-label'}, 'No time'));
+    per.forEach(p=>{
+      const cell = el('div', {class:'tl-cell'});
+      p.untimed.forEach(t=>cell.appendChild(el('button', {type:'button', class:'tl-chip' + (t.type === 'event' ? ' ev' : '') + (t.completed ? ' done' : ''), style:'border-left-color:' + catColor(t.category), title:t.title, onclick:()=>requestEdit(t)}, t.title)));
+      row.appendChild(cell);
+    });
+    inner.appendChild(row);
+  }
+
+  const grid = el('div', {class:'tl-row tl-grid'});
+  const gutter = el('div', {class:'tl-gutter', style:'height:' + ((hi - lo) * CAL_PPH) + 'px'});
+  for(let h = lo; h <= hi; h++){ gutter.appendChild(el('div', {class:'tl-hour', style:'top:' + ((h - lo) * CAL_PPH) + 'px'}, calHourLabel(h))); }
+  grid.appendChild(gutter);
+  const nowMin = new Date().getHours() * 60 + new Date().getMinutes();
+  per.forEach(p=>{
+    const col = el('div', {class:'tl-col' + (p.ds === today ? ' today' : ''), style:'height:' + ((hi - lo) * CAL_PPH) + 'px'});
+    p.timed.forEach(x=>{
+      const t = x.t, h = Math.max((x.e - x.s) * CAL_PPH / 60, 22), w = 100 / x.lanes, range = formatTimeRange(t);
+      col.appendChild(el('button', {type:'button', class:'tl-block' + (t.type === 'event' ? ' ev' : '') + (t.completed ? ' done' : '') + (h >= 44 ? ' tall' : ''),
+        style:'top:' + ((x.s - lo * 60) * CAL_PPH / 60) + 'px; height:' + (h - 2) + 'px; left:calc(' + (x.lane * w) + '% + 1px); width:calc(' + w + '% - 3px); border-left-color:' + catColor(t.category) + ';',
+        title:t.title + ' · ' + range, 'aria-label':t.title + ', ' + range + (t.completed ? ', done' : ''), onclick:()=>requestEdit(t)},
+        el('span', {class:'tl-block-time'}, range), el('span', {class:'tl-block-title'}, t.title)));
+    });
+    if(p.ds === today && nowMin >= lo * 60 && nowMin <= hi * 60) col.appendChild(el('div', {class:'tl-now', style:'top:' + ((nowMin - lo * 60) * CAL_PPH / 60) + 'px'}));
+    grid.appendChild(col);
+  });
+  const scroller = el('div', {class:'tl-scroll'}, grid);
+  scroller.addEventListener('scroll', ()=>{ calScrollTop = scroller.scrollTop; });
+  inner.appendChild(scroller);
+
+  const first = per.flatMap(p=>p.timed).reduce((m, x)=>Math.min(m, x.s), 24 * 60);
+  const anchor = per.some(p=>p.ds === today) ? nowMin - 60 : (first < 24 * 60 ? first - 30 : lo * 60);
+  setTimeout(()=>{ scroller.scrollTop = calScrollTop != null ? calScrollTop : Math.max(0, (anchor - lo * 60) * CAL_PPH / 60); }, 0);
+  return el('div', {class:'tl-wrap'}, inner);
+}
 function renderCalendarTabView(){
+  const mode = calViewMode();
+  return el('div', {class:'cal-views'}, renderCalViewBar(mode), mode === 'month' ? renderCalendarTabViewLegacy() : renderCalTimeline(mode));
+}
+function renderCalendarTabViewLegacy(){
   return el('div',{class:'big-calendar-layout'},
     renderBigCalendar(),
     renderCalendarSidePanel()
