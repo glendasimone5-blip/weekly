@@ -5,10 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob:; connect-src 'self' https://weekly-push.glendasimone5.workers.dev https://nominatim.openstreetmap.org; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
 <title>Weekly — Task Console</title>
-<meta name="app-version" content="2026-10-25a">
+<meta name="app-version" content="2026-10-26a">
 <meta name="push-server" content="https://weekly-push.glendasimone5.workers.dev">
 <meta name="vapid-public" content="BC-oohRYdwdxzqXouwUBrQaCByRvzuUjy8b4DJceMHyCqO3XHOEfJklA7L0F82DayZs8B2XPIiYBkvV8MpSXRt8">
-<meta name="app-notes" content="Reminder popups, period heads-up, start and end check-ins, reminders that work when the app is closed, a wider layout, a full-page Settings, reminders set relative to the event (like 10 minutes before), add-on-selected-day, a Today button and titles in the calendar, editing repeating items (this one, this and following, all), flexible repeats (every N, chosen weekdays, an end date), places on events with address search, sync between your devices (encrypted so the server cannot read it), a connection allow-list, a problem log in Settings, and an optional app lock that encrypts data on the device and locks when idle, a way to change the sync code, encrypted backups (and backups no longer include the sync code), and no outside services (the chart, image and font files now come from this site), a welcome screen for new people, privacy policy and terms pages, and a health-information notice before period tracking is switched on, a layout built for phones (forms that scroll, bigger touch targets, a scrolling tab bar), and a friendly page-not-found screen, event end times, editing completed tasks, a new weekly balance view, backup and restore, and a New Task button that opens the full form.">
+<meta name="app-notes" content="Reminder popups, period heads-up, start and end check-ins, reminders that work when the app is closed, a wider layout, a full-page Settings, reminders set relative to the event (like 10 minutes before), add-on-selected-day, a Today button and titles in the calendar, editing repeating items (this one, this and following, all), flexible repeats (every N, chosen weekdays, an end date), places on events with address search, sync between your devices (encrypted so the server cannot read it), a connection allow-list, a problem log in Settings, and an optional app lock that encrypts data on the device and locks when idle, a way to change the sync code, encrypted backups (and backups no longer include the sync code), and no outside services (the chart, image and font files now come from this site), a welcome screen for new people, privacy policy and terms pages, and a health-information notice before period tracking is switched on, a layout built for phones (forms that scroll, bigger touch targets, a scrolling tab bar), and a friendly page-not-found screen, event end times, editing completed tasks, a new weekly balance view, backup and restore, a New Task button that opens the full form, and UK-style dates, 24-hour time and a choice of Monday or Sunday as the first day of the week.">
 <script>
   // Runs before anything else in <head>, including the external libraries
   // below (which block parsing while they load) — otherwise the theme
@@ -1230,9 +1230,39 @@ function fmt(d){
   return `${y}-${m}-${day}`;
 }
 function parseDate(s){ const [y,m,dd] = s.split('-').map(Number); return new Date(y, m-1, dd); }
+/* ---- Dates, time and week start (Settings > Dates and time) ---- */
+function dateStyle(){
+  const v = state.meta && state.meta.dateStyle;
+  if(v === 'us' || v === 'uk') return v;
+  try{ return /^en-US/i.test(navigator.language || '') ? 'us' : 'uk'; }catch(e){ return 'uk'; }
+}
+function dateLocale(){ return dateStyle() === 'us' ? 'en-US' : 'en-GB'; }
+function use24h(){
+  const v = state.meta && state.meta.clock;
+  if(v === '24') return true;
+  if(v === '12') return false;
+  try{ return !new Intl.DateTimeFormat(navigator.language || 'en-GB', { hour:'numeric' }).resolvedOptions().hour12; }catch(e){ return false; }
+}
+function weekStartDow(){ return (state.meta && state.meta.weekStart === 'sun') ? 0 : 1; } // JS getDay() value of the first day
+function rotDow(list){ const k = weekStartDow() === 0 ? 6 : 0; return list.slice(k).concat(list.slice(0, k)); } // list is Monday-first
+function time24(timeStr){ const [h,m] = timeStr.split(':').map(Number); return String(h).padStart(2,'0') + ':' + String(m).padStart(2,'0'); }
+function renderDatesTimeSettings(){
+  const pick = (label, key, current, options)=> el('div',{class:'settings-row'},
+    el('span',{}, label),
+    el('select',{class:'calendar-placement-select', onchange:(e)=>{ state.meta[key] = e.target.value; saveMeta(); render(); }},
+      options.map(([v,text])=> el('option',{value:v, ...(current===v?{selected:'selected'}:{})}, text))
+    )
+  );
+  return [
+    pick('Date style', 'dateStyle', dateStyle(), [['uk','UK (4 Nov)'],['us','US (Nov 4)']]),
+    pick('Clock', 'clock', use24h() ? '24' : '12', [['24','24-hour (14:30)'],['12','12-hour (2:30 PM)']]),
+    pick('Week starts on', 'weekStart', weekStartDow() === 0 ? 'sun' : 'mon', [['mon','Monday'],['sun','Sunday']]),
+    el('div',{class:'settings-hint'}, 'The time pickers inside forms follow your phone or computer settings, so they may look different.')
+  ];
+}
 function startOfWeek(offset){
   const now = new Date();
-  const day = (now.getDay() + 6) % 7; // Mon=0
+  const day = (now.getDay() + 7 - weekStartDow()) % 7; // 0 = first day of the chosen week
   const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - day + offset*7);
   return monday;
 }
@@ -1252,7 +1282,7 @@ function isInWeek(dateStr, offset){
 function weekLabel(offset){
   const dates = weekDates(offset);
   const opts = {month:'short', day:'numeric'};
-  const label = dates[0].toLocaleDateString('en-US', opts) + ' – ' + dates[6].toLocaleDateString('en-US', opts);
+  const label = dates[0].toLocaleDateString(dateLocale(), opts) + ' – ' + dates[6].toLocaleDateString(dateLocale(), opts);
   return offset===0 ? 'This Week · ' + label : (offset<0 ? label + ' (past)' : label + ' (upcoming)');
 }
 function isoWeekKey(dateStr){
@@ -1266,7 +1296,7 @@ function isoWeekKey(dateStr){
   return target.getFullYear() + '-W' + String(week).padStart(2,'0');
 }
 function monthDate(offset){ const now = new Date(); return new Date(now.getFullYear(), now.getMonth()+offset, 1); }
-function monthLabel(offset){ return monthDate(offset).toLocaleDateString('en-US',{month:'long', year:'numeric'}); }
+function monthLabel(offset){ return monthDate(offset).toLocaleDateString(dateLocale(),{month:'long', year:'numeric'}); }
 function isInMonth(dateStr, offset){
   const d = parseDate(dateStr);
   const m = monthDate(offset);
@@ -1281,7 +1311,7 @@ function nextDueDate(dateStr, recurrence){
   return fmt(d);
 }
 function niceDate(dateStr){
-  return parseDate(dateStr).toLocaleDateString('en-US',{month:'short', day:'numeric'});
+  return parseDate(dateStr).toLocaleDateString(dateLocale(),{month:'short', day:'numeric'});
 }
 const RECUR_LABEL = { daily:'Daily', weekly:'Weekly', monthly:'Monthly', yearly:'Yearly' };
 
@@ -1289,7 +1319,7 @@ function calendarGridDates(offset){
   const base = monthDate(offset);
   const year = base.getFullYear(), month = base.getMonth();
   const firstOfMonth = new Date(year, month, 1);
-  const startWeekday = (firstOfMonth.getDay()+6)%7; // Mon=0
+  const startWeekday = (firstOfMonth.getDay() + 7 - weekStartDow()) % 7; // 0 = first day of the chosen week
   const gridStart = new Date(year, month, 1 - startWeekday);
   return Array.from({length:42}, (_,i)=>{ const d = new Date(gridStart); d.setDate(gridStart.getDate()+i); return d; });
 }
@@ -2145,8 +2175,8 @@ function computeStats(){
   const weeks = [];
   for(let i=7;i>=0;i--){
     const dates = weekDates(-i);
-    const key = isoWeekKey(fmt(dates[0]));
-    const label = dates[0].toLocaleDateString('en-US',{month:'short',day:'numeric'});
+    const key = isoWeekKey(fmt(dates[1])); // dates[1] is in the same ISO week whichever day the week starts on
+    const label = dates[0].toLocaleDateString(dateLocale(),{month:'short',day:'numeric'});
     const weekDateStrs = dates.map(fmt);
     const dueThisWeek = realTasks.filter(t=>weekDateStrs.includes(t.dueDate));
     const doneOnTime = dueThisWeek.filter(t=>t.completed);
@@ -2739,6 +2769,11 @@ function renderSettingsModal(){
     ),
 
     el('div',{class:'settings-section'},
+      el('div',{class:'settings-section-title'}, 'Dates and time'),
+      ...renderDatesTimeSettings()
+    ),
+
+    el('div',{class:'settings-section'},
       el('div',{class:'settings-section-title'}, 'Notifications'),
       el('div',{class:'settings-row'},
         el('span',{}, state.notifPermission==='granted' ? '● Reminders on'
@@ -3328,7 +3363,7 @@ function syncSettingsSection(){
     sec.appendChild(codeInput);
     sec.appendChild(el('div',{style:'margin-top:8px;'}, btn('Join with this code', ()=>joinSync(codeInput.value), false)));
   } else {
-    const last = syncState.lastSync ? new Date(syncState.lastSync).toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' }) : 'not yet';
+    const last = syncState.lastSync ? new Date(syncState.lastSync).toLocaleTimeString(dateLocale(), { hour:'2-digit', minute:'2-digit', hour12: !use24h() }) : 'not yet';
     sec.appendChild(el('div',{class:'settings-hint', style:'margin-bottom:8px;'}, '● Sync is on for this device. Last synced: ' + last + '.'));
     sec.appendChild(el('div',{class:'settings-hint'}, 'Your code (keep it private; anyone with it can read your data):'));
     sec.appendChild(el('div',{class:'sync-code'}, state.syncShowCode ? state.meta.syncCode : '••••-••••-••••-••••-••••-••••'));
@@ -3886,14 +3921,14 @@ function renderBigCalendar(){
 function renderBigCalendarLegacy(){
   const offset = state.calendarMonthOffset;
   const dates = calendarGridDates(offset);
-  const monthName = monthDate(offset).toLocaleDateString('en-US',{month:'long', year:'numeric'});
+  const monthName = monthDate(offset).toLocaleDateString(dateLocale(),{month:'long', year:'numeric'});
   const today = todayStr();
   const currentMonthIdx = monthDate(offset).getMonth();
   const mode = state.period.mode;
   const selectedDs = state.calendarSelectedDate || today;
 
   const grid = el('div',{class:'calendar-grid big-calendar-grid'});
-  ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].forEach(d=> grid.appendChild(el('div',{class:'calendar-dow'}, d)));
+  rotDow(['Mon','Tue','Wed','Thu','Fri','Sat','Sun']).forEach(d=> grid.appendChild(el('div',{class:'calendar-dow'}, d)));
 
   dates.forEach(d=>{
     const ds = fmt(d);
@@ -3943,7 +3978,7 @@ function renderBigCalendarLegacy(){
 
 function renderCalendarSidePanel(){
   const ds = state.calendarSelectedDate || todayStr();
-  const label = parseDate(ds).toLocaleDateString('en-US',{weekday:'long', month:'long', day:'numeric', year:'numeric'});
+  const label = parseDate(ds).toLocaleDateString(dateLocale(),{weekday:'long', month:'long', day:'numeric', year:'numeric'});
   const panel = el('div',{class:'calendar-side-panel'});
   panel.appendChild(el('div',{class:'calendar-side-heading'}, label));
   panel.appendChild(el('button',{class:'settings-action-btn', style:'margin:0 0 12px;', onclick:()=>{ state.calendarSelectedDate = ds; state.editingTask = null; state.modalOpen = true; render(); }}, '+ Add on this day'));
@@ -3997,14 +4032,14 @@ function renderCalendarWidget(){
 function renderCalendarWidgetLegacy(){
   const offset = state.calendarMonthOffset;
   const dates = calendarGridDates(offset);
-  const monthName = monthDate(offset).toLocaleDateString('en-US',{month:'short', year:'numeric'});
+  const monthName = monthDate(offset).toLocaleDateString(dateLocale(),{month:'short', year:'numeric'});
   const today = todayStr();
   const currentMonthIdx = monthDate(offset).getMonth();
   const editMode = state.periodEditMode;
   const mode = state.period.mode;
 
   const grid = el('div',{class:'calendar-grid'});
-  ['M','T','W','T','F','S','S'].forEach(d=> grid.appendChild(el('div',{class:'calendar-dow'}, d)));
+  rotDow(['M','T','W','T','F','S','S']).forEach(d=> grid.appendChild(el('div',{class:'calendar-dow'}, d)));
 
   dates.forEach(d=>{
     const ds = fmt(d);
@@ -4363,7 +4398,7 @@ function renderMain(){
     const ds = state.calendarSelectedDate;
     let dayTasks = state.tasks.filter(t=>t.dueDate===ds);
     if(state.activeCategory !== 'all') dayTasks = dayTasks.filter(t=>t.category===state.activeCategory);
-    const label = ds===todayStr() ? 'Today' : parseDate(ds).toLocaleDateString('en-US',{weekday:'long', month:'short', day:'numeric'});
+    const label = ds===todayStr() ? 'Today' : parseDate(ds).toLocaleDateString(dateLocale(),{weekday:'long', month:'short', day:'numeric'});
     main.appendChild(el('div',{class:'section-title'},
       `${label} · ${dayTasks.length} task${dayTasks.length===1?'':'s'}`,
       el('button',{class:'calendar-clear-inline', onclick:()=>{ state.calendarSelectedDate=null; render(); }}, '✕ Clear')
@@ -4413,6 +4448,7 @@ function renderMain(){
 }
 
 function formatTime12h(timeStr){
+  if(timeStr && use24h()) return time24(timeStr);
   if(!timeStr) return '';
   const [h,m] = timeStr.split(':').map(Number);
   const period = h>=12 ? 'PM' : 'AM';
@@ -4421,6 +4457,7 @@ function formatTime12h(timeStr){
 }
 
 function formatTimeRange(t){
+  if(t.time && t.endTime && use24h()) return time24(t.time) + '–' + time24(t.endTime);
   if(!t.time) return '';
   if(!t.endTime) return formatTime12h(t.time);
   const s = formatTime12h(t.time), e = formatTime12h(t.endTime);
@@ -4428,6 +4465,7 @@ function formatTimeRange(t){
 }
 
 function shortTime(tm){
+  if(use24h()) return time24(tm);
   const [h,m] = tm.split(':').map(Number), p = h>=12 ? 'p' : 'a', h12 = h%12===0 ? 12 : h%12;
   return m ? h12+':'+String(m).padStart(2,'0')+p : h12+p;
 }
@@ -4605,7 +4643,7 @@ function renderTask(t){
   const isEvent = t.type==='event';
   const overdue = isOverdue(t);
   const justToggled = t.id === state.lastToggledId;
-  const dateLabel = parseDate(t.dueDate).toLocaleDateString('en-US',{month:'short',day:'numeric'}) + (isEvent && t.time ? ' · '+formatTimeRange(t) : '');
+  const dateLabel = parseDate(t.dueDate).toLocaleDateString(dateLocale(),{month:'short',day:'numeric'}) + (isEvent && t.time ? ' · '+formatTimeRange(t) : '');
   const hasSubtasks = !isEvent && t.subtasks && t.subtasks.length>0;
   const subtaskDoneCount = hasSubtasks ? t.subtasks.filter(s=>s.completed).length : 0;
   const isExpanded = state.expandedSubtaskIds.includes(t.id);
@@ -4709,7 +4747,7 @@ function renderAllTasksView(){
   let lastMonth = null;
   sorted.forEach(t=>{
     const d = parseDate(t.dueDate);
-    const monthKey = d.toLocaleDateString('en-US',{month:'long', year:'numeric'});
+    const monthKey = d.toLocaleDateString(dateLocale(),{month:'long', year:'numeric'});
     if(monthKey !== lastMonth){
       wrap.appendChild(el('div',{class:'group-head'}, el('span',{class:'name'}, monthKey)));
       lastMonth = monthKey;
@@ -4737,7 +4775,7 @@ function renderCompletedView(){
     return wrap;
   }
   completed.forEach(t=>{
-    const doneLabel = parseDate(t.completedAt).toLocaleDateString('en-US',{weekday:'short', month:'short', day:'numeric'});
+    const doneLabel = parseDate(t.completedAt).toLocaleDateString(dateLocale(),{weekday:'short', month:'short', day:'numeric'});
     wrap.appendChild(renderCompletedTask(t, doneLabel)); return;
     wrap.appendChild(el('div',{class:'task done'},
       el('div',{class:'checkbox checked'}, '✓'),
@@ -4789,7 +4827,7 @@ function renderUpcomingView(){
   let lastDate = null;
   items.forEach(t=>{
     if(t.dueDate !== lastDate){
-      const label = t.dueDate===todayStr() ? 'Today' : parseDate(t.dueDate).toLocaleDateString('en-US',{weekday:'long', month:'short', day:'numeric'});
+      const label = t.dueDate===todayStr() ? 'Today' : parseDate(t.dueDate).toLocaleDateString(dateLocale(),{weekday:'long', month:'short', day:'numeric'});
       wrap.appendChild(el('div',{class:'group-head'}, el('span',{class:'name'}, label)));
       lastDate = t.dueDate;
     }
@@ -4799,7 +4837,7 @@ function renderUpcomingView(){
 }
 
 function niceDateLong(dateStr){
-  return parseDate(dateStr).toLocaleDateString('en-US',{weekday:'short', month:'short', day:'numeric', year:'numeric'});
+  return parseDate(dateStr).toLocaleDateString(dateLocale(),{weekday:'short', month:'short', day:'numeric', year:'numeric'});
 }
 
 // Self-contained date picker: a button showing the chosen date that opens a
@@ -4827,7 +4865,7 @@ function createDatePicker(initialDateStr){
   function renderPopover(){
     popover.innerHTML = '';
     const dates = calendarGridDates(pickerOffset);
-    const monthName = monthDate(pickerOffset).toLocaleDateString('en-US',{month:'long', year:'numeric'});
+    const monthName = monthDate(pickerOffset).toLocaleDateString(dateLocale(),{month:'long', year:'numeric'});
     const currentMonthIdx = monthDate(pickerOffset).getMonth();
 
     popover.appendChild(el('div',{class:'date-popover-header'},
@@ -4837,7 +4875,7 @@ function createDatePicker(initialDateStr){
     ));
 
     const grid = el('div',{class:'date-popover-grid'});
-    ['M','T','W','T','F','S','S'].forEach(d=>grid.appendChild(el('div',{class:'date-popover-dow'}, d)));
+    rotDow(['M','T','W','T','F','S','S']).forEach(d=>grid.appendChild(el('div',{class:'date-popover-dow'}, d)));
     dates.forEach(d=>{
       const ds = fmt(d);
       const inMonth = d.getMonth()===currentMonthIdx;
@@ -5083,7 +5121,7 @@ function renderModal(){
     locationFieldWrap,
     el('div',{class:'field'}, el('label',{},'Remind me at a set time (optional)'), remindInput,
       el('div',{class:'settings-hint', style:'margin-top:5px;'}, 'Pops up with a sound on the due date while this tab is open.')),
-    el('div',{class:'field'}, el('label',{},'Remind me before (optional)'), leadWrap, el('div',{class:'settings-hint', style:'margin-top:5px;'}, 'All-day items remind at 9:00 AM, or at the set time above.')),
+    el('div',{class:'field'}, el('label',{},'Remind me before (optional)'), leadWrap, el('div',{class:'settings-hint', style:'margin-top:5px;'}, 'All-day items remind at ' + formatTime12h(state.meta.allDayRemindTime || '09:00') + ', or at the set time above.')),
     el('div',{class:'field'}, el('label',{},'Repeats'), recurSelect,
       scope ? el('div',{class:'settings-hint', style:'margin-top:5px;'}, ({ this:'Editing this one only. Its date can change; repeat settings stay as they are.', following:'Editing this and following. The repeat settings below apply from this date on.', all:'Editing all in the series. Dates and repeat settings stay as they are.' })[scope]) : null,
       repeatRuleWrap, repeatError),
@@ -5126,7 +5164,7 @@ function renderAchievementsPanel(){
   });
   panel.appendChild(grid);
 
-  const today = new Date().toLocaleDateString('en-US',{month:'long', day:'numeric', year:'numeric'});
+  const today = new Date().toLocaleDateString(dateLocale(),{month:'long', day:'numeric', year:'numeric'});
   const unlockedBadges = achievements.filter(a=>a.unlocked);
   const shareCard = el('div',{id:'share-card', class:'share-card'},
     el('div',{class:'share-header'},
