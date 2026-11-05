@@ -5,10 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob:; connect-src 'self' https://weekly-push.glendasimone5.workers.dev https://nominatim.openstreetmap.org; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
 <title>Weekly — Task Console</title>
-<meta name="app-version" content="2026-10-28a">
+<meta name="app-version" content="2026-10-29a">
 <meta name="push-server" content="https://weekly-push.glendasimone5.workers.dev">
 <meta name="vapid-public" content="BC-oohRYdwdxzqXouwUBrQaCByRvzuUjy8b4DJceMHyCqO3XHOEfJklA7L0F82DayZs8B2XPIiYBkvV8MpSXRt8">
-<meta name="app-notes" content="Reminder popups, period heads-up, start and end check-ins, reminders that work when the app is closed, a wider layout, a full-page Settings, reminders set relative to the event (like 10 minutes before), add-on-selected-day, a Today button and titles in the calendar, editing repeating items (this one, this and following, all), flexible repeats (every N, chosen weekdays, an end date), places on events with address search, sync between your devices (encrypted so the server cannot read it), a connection allow-list, a problem log in Settings, and an optional app lock that encrypts data on the device and locks when idle, a way to change the sync code, encrypted backups (and backups no longer include the sync code), and no outside services (the chart, image and font files now come from this site), a welcome screen for new people, privacy policy and terms pages, and a health-information notice before period tracking is switched on, a layout built for phones (forms that scroll, bigger touch targets, a scrolling tab bar), and a friendly page-not-found screen, event end times, editing completed tasks, a new weekly balance view, backup and restore, a New Task button that opens the full form, and UK-style dates, 24-hour time and a choice of Monday or Sunday as the first day of the week, plus calmer wording in the Report insights, and Week and Day views on the Calendar tab.">
+<meta name="app-notes" content="Reminder popups, period heads-up, start and end check-ins, reminders that work when the app is closed, a wider layout, a full-page Settings, reminders set relative to the event (like 10 minutes before), add-on-selected-day, a Today button and titles in the calendar, editing repeating items (this one, this and following, all), flexible repeats (every N, chosen weekdays, an end date), places on events with address search, sync between your devices (encrypted so the server cannot read it), a connection allow-list, a problem log in Settings, and an optional app lock that encrypts data on the device and locks when idle, a way to change the sync code, encrypted backups (and backups no longer include the sync code), and no outside services (the chart, image and font files now come from this site), a welcome screen for new people, privacy policy and terms pages, and a health-information notice before period tracking is switched on, a layout built for phones (forms that scroll, bigger touch targets, a scrolling tab bar), and a friendly page-not-found screen, event end times, editing completed tasks, a new weekly balance view, backup and restore, a New Task button that opens the full form, and UK-style dates, 24-hour time and a choice of Monday or Sunday as the first day of the week, plus calmer wording in the Report insights, Week and Day views on the Calendar tab, drag to reschedule, and clearer day numbers in the calendar.">
 <script>
   // Runs before anything else in <head>, including the external libraries
   // below (which block parsing while they load) — otherwise the theme
@@ -834,7 +834,8 @@
   .tl-headcell{ background:transparent; color:var(--text-dim); border:0; border-left:1px solid var(--border); padding:8px 4px; font:inherit; font-size:12px; text-align:center; }
   button.tl-headcell{ cursor:pointer; }
   .tl-headcell.today{ color:var(--text); font-weight:700; }
-  .tl-headcell .num{ display:block; font-size:18px; }
+  .tl-headcell .num{ display:flex; align-items:center; justify-content:center; width:fit-content; min-width:30px; height:30px; margin:3px auto 0; padding:0 4px; border-radius:15px; font-size:16px; font-weight:600; color:var(--text); background:var(--surface-2); }
+  .tl-headcell.today .num{ background:var(--accent); color:var(--on-accent); }
   .tl-allday{ border-top:1px solid var(--border); border-bottom:1px solid var(--border); }
   .tl-gutter-label{ font-family:var(--mono); font-size:10px; color:var(--text-faint); padding:6px 6px 0 0; text-align:right; }
   .tl-cell{ border-left:1px solid var(--border); padding:4px; display:flex; flex-direction:column; gap:3px; min-width:0; }
@@ -854,6 +855,30 @@
   .tl-block-title{ min-width:0; overflow:hidden; text-overflow:ellipsis; }
   .tl-now{ position:absolute; left:0; right:0; height:2px; background:var(--accent); pointer-events:none; }
   .tl-block:focus-visible, .tl-chip:focus-visible, .tl-headcell:focus-visible, .cal-seg button:focus-visible, .cal-nav button:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
+  /* Drag to reschedule */
+  .tl-block, .tl-chip, .cal-chip{ -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; }
+  .tl-block:not(.done), .tl-chip:not(.done){ cursor:grab; }
+  body.cal-dragging, body.cal-dragging *{ cursor:grabbing !important; user-select:none !important; }
+  .drag-src{ opacity:0.35; }
+  .tl-drop{ position:absolute; left:2px; right:2px; box-sizing:border-box; border:2px dashed var(--accent); border-radius:6px; background:var(--accent-glow); color:var(--text); font-family:var(--mono); font-size:11px; padding:2px 6px; pointer-events:none; z-index:3; overflow:hidden; white-space:nowrap; }
+  .tl-col.drop{ background-color:var(--accent-glow); }
+  .big-calendar-cell.drop{ outline:2px solid var(--accent); outline-offset:-2px; }
+  .cal-dragtip{ position:fixed; z-index:1000; pointer-events:none; max-width:220px; padding:4px 10px; border-radius:8px; background:var(--accent); color:var(--on-accent); font-size:12px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; box-shadow:0 6px 18px rgba(0,0,0,0.35); }
+  .cal-undo{ position:fixed; left:50%; bottom:20px; transform:translateX(-50%); z-index:1000; display:flex; align-items:center; gap:12px; max-width:calc(100vw - 24px); padding:10px 14px; border-radius:12px; background:var(--surface-2); color:var(--text); border:1px solid var(--border); box-shadow:0 8px 24px rgba(0,0,0,0.4); font-size:13px; }
+  .cal-undo button{ background:var(--accent); color:var(--on-accent); border:0; border-radius:8px; padding:6px 12px; min-height:36px; font:inherit; font-weight:600; cursor:pointer; flex:0 0 auto; }
+  .cal-hint{ margin:-6px 0 12px; font-size:12px; color:var(--text-dim); }
+  /* Clearer day numbers: a badge of their own, so they never run into the entries below */
+  .big-calendar-grid .big-calendar-cell{ border:1px solid var(--border); gap:4px; }
+  .big-calendar-grid .big-calendar-cell.today{ border-color:var(--accent); }
+  .big-calendar-grid .big-calendar-cell .calendar-daynum{ flex:0 0 auto; box-sizing:border-box; display:inline-flex; align-items:center; justify-content:center; min-width:26px; height:26px; padding:0 5px; border-radius:13px; font-family:var(--mono); font-size:13px; font-weight:600; color:var(--text); background:var(--surface-2); }
+  .big-calendar-grid .big-calendar-cell.other-month .calendar-daynum{ background:transparent; }
+  .big-calendar-grid .big-calendar-cell.today .calendar-daynum, .big-calendar-grid .big-calendar-cell.today.selected .calendar-daynum{ background:var(--accent); color:var(--on-accent); }
+  .big-calendar-grid .big-calendar-cell.selected{ background:var(--accent-glow) !important; border-color:var(--accent); }
+  .big-calendar-grid .big-calendar-cell.selected:not(.today) .calendar-daynum{ box-shadow:0 0 0 2px var(--accent); color:var(--text); }
+  @media (max-width:760px){
+    .big-calendar-grid .big-calendar-cell{ gap:3px; }
+    .big-calendar-grid .big-calendar-cell .calendar-daynum{ min-width:24px; height:24px; border-radius:12px; font-size:12px; }
+  }
   .fine{ text-align:center; color:var(--text-faint); font-size:11.5px; margin-top:30px; font-family:var(--mono); }
 
   /* ---------- Celebration: animation, toast, streak badge ---------- */
@@ -3936,11 +3961,12 @@ function renderBigCalendar(){
   const w = renderBigCalendarLegacy();
   const dates = calendarGridDates(state.calendarMonthOffset);
   w.querySelectorAll('.big-calendar-cell').forEach((cell, i)=>{
+    cell.dataset.ds = fmt(dates[i]);
     const items = state.tasks.filter(t=>t.dueDate===fmt(dates[i])).sort(compareDayItems);
     if(!items.length) return;
     const chips = el('div',{class:'cal-chips'});
     items.slice(0,3).forEach(t=>{
-      chips.appendChild(el('div',{class:'cal-chip'+(t.type==='event'?' ev':'')+(t.completed?' done':''), style:'border-left-color:'+catColor(t.category), title:t.title},
+      chips.appendChild(el('div',{'data-tid':t.id, class:'cal-chip'+(t.type==='event'?' ev':'')+(t.completed?' done':''), style:'border-left-color:'+catColor(t.category), title:t.title},
         (t.time ? shortTime(t.time)+' ' : '') + t.title));
     });
     if(items.length > 3) chips.appendChild(el('div',{class:'cal-chip-more'}, '+'+(items.length-3)+' more'));
@@ -4115,7 +4141,7 @@ function renderCalTimeline(mode){
   let lo = 7, hi = 21;
   per.forEach(p=>p.timed.forEach(x=>{ lo = Math.min(lo, Math.floor(x.s / 60)); hi = Math.max(hi, Math.ceil(x.e / 60)); }));
   hi = Math.min(hi, 24);
-  const loc = dateLocale(), n = days.length, inner = el('div', {class:'tl-inner' + (mode === 'week' ? ' week' : ''), style:'--n:' + n});
+  const loc = dateLocale(), n = days.length, inner = el('div', {'data-lo':lo, class:'tl-inner' + (mode === 'week' ? ' week' : ''), style:'--n:' + n});
 
   const head = el('div', {class:'tl-row tl-head'}, el('div', {}));
   per.forEach(p=>{
@@ -4131,7 +4157,7 @@ function renderCalTimeline(mode){
     const row = el('div', {class:'tl-row tl-allday'}, el('div', {class:'tl-gutter-label'}, 'No time'));
     per.forEach(p=>{
       const cell = el('div', {class:'tl-cell'});
-      p.untimed.forEach(t=>cell.appendChild(el('button', {type:'button', class:'tl-chip' + (t.type === 'event' ? ' ev' : '') + (t.completed ? ' done' : ''), style:'border-left-color:' + catColor(t.category), title:t.title, onclick:()=>requestEdit(t)}, t.title)));
+      p.untimed.forEach(t=>cell.appendChild(el('button', {type:'button', 'data-tid':t.id, class:'tl-chip' + (t.type === 'event' ? ' ev' : '') + (t.completed ? ' done' : ''), style:'border-left-color:' + catColor(t.category), title:t.title, onclick:()=>requestEdit(t)}, t.title)));
       row.appendChild(cell);
     });
     inner.appendChild(row);
@@ -4143,10 +4169,10 @@ function renderCalTimeline(mode){
   grid.appendChild(gutter);
   const nowMin = new Date().getHours() * 60 + new Date().getMinutes();
   per.forEach(p=>{
-    const col = el('div', {class:'tl-col' + (p.ds === today ? ' today' : ''), style:'height:' + ((hi - lo) * CAL_PPH) + 'px'});
+    const col = el('div', {'data-ds':p.ds, class:'tl-col' + (p.ds === today ? ' today' : ''), style:'height:' + ((hi - lo) * CAL_PPH) + 'px'});
     p.timed.forEach(x=>{
       const t = x.t, h = Math.max((x.e - x.s) * CAL_PPH / 60, 22), w = 100 / x.lanes, range = formatTimeRange(t);
-      col.appendChild(el('button', {type:'button', class:'tl-block' + (t.type === 'event' ? ' ev' : '') + (t.completed ? ' done' : '') + (h >= 44 ? ' tall' : ''),
+      col.appendChild(el('button', {type:'button', 'data-tid':t.id, class:'tl-block' + (t.type === 'event' ? ' ev' : '') + (t.completed ? ' done' : '') + (h >= 44 ? ' tall' : ''),
         style:'top:' + ((x.s - lo * 60) * CAL_PPH / 60) + 'px; height:' + (h - 2) + 'px; left:calc(' + (x.lane * w) + '% + 1px); width:calc(' + w + '% - 3px); border-left-color:' + catColor(t.category) + ';',
         title:t.title + ' · ' + range, 'aria-label':t.title + ', ' + range + (t.completed ? ', done' : ''), onclick:()=>requestEdit(t)},
         el('span', {class:'tl-block-time'}, range), el('span', {class:'tl-block-title'}, t.title)));
@@ -4163,9 +4189,151 @@ function renderCalTimeline(mode){
   setTimeout(()=>{ scroller.scrollTop = calScrollTop != null ? calScrollTop : Math.max(0, (anchor - lo * 60) * CAL_PPH / 60); }, 0);
   return el('div', {class:'tl-wrap'}, inner);
 }
+/* ---- Drag to reschedule (mouse, touch press-and-hold, and Shift + arrow keys) ---- */
+let calDrag = null, calSuppressClick = false, calUndoTimer = null;
+function calMinToTime(m){ m = ((Math.round(m) % 1440) + 1440) % 1440; return String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0'); }
+function calVisibleLen(t){ const sp = calSpan(t); return sp[1] - sp[0]; }
+function calDayLabel(ds){ return parseDate(ds).toLocaleDateString(dateLocale(), {weekday:'short', day:'numeric', month:'short'}); }
+function calMoved(t, startMin){ // the time and end time an item would have if it started at startMin (length is kept)
+  const out = { time:t.time, endTime:t.endTime };
+  if(startMin != null && t.time){
+    let len = t.endTime ? calToMin(t.endTime) - calToMin(t.time) : 0; if(t.endTime && len <= 0) len += 1440;
+    out.time = calMinToTime(startMin); if(t.endTime) out.endTime = calMinToTime(startMin + len);
+  }
+  return out;
+}
+function calHint(mode){
+  let coarse = false, narrow = false;
+  try{ coarse = window.matchMedia('(pointer: coarse)').matches; narrow = window.matchMedia('(max-width: 760px)').matches; }catch(e){}
+  if(mode === 'month' && narrow) return null; // month entries are hidden on small screens
+  return el('div', {class:'cal-hint'}, coarse ? 'Press and hold an item, then drag it to move it.' : 'Drag an item to move it. With the keyboard, select an item and use Shift + the arrow keys.');
+}
+function calHideUndo(){ clearTimeout(calUndoTimer); document.querySelectorAll('.cal-undo').forEach(n=>n.remove()); }
+function calShowUndo(id, old, text){
+  calHideUndo();
+  document.body.appendChild(el('div', {class:'cal-undo', role:'status'}, el('span', {}, text),
+    el('button', {type:'button', onclick: async ()=>{ const t = state.tasks.find(x=>x.id === id); calHideUndo(); if(t){ Object.assign(t, old); await saveTasks(); render(); } }}, 'Undo')));
+  calUndoTimer = setTimeout(calHideUndo, 8000);
+}
+async function calCommitMove(t, ds, startMin, refocus){
+  const moved = calMoved(t, startMin), patch = {}, old = {};
+  if(ds !== t.dueDate){ patch.dueDate = ds; old.dueDate = t.dueDate; }
+  if(moved.time !== t.time){ patch.time = moved.time; old.time = t.time; }
+  if(moved.endTime !== t.endTime){ patch.endTime = moved.endTime; old.endTime = t.endTime; }
+  if(!Object.keys(patch).length) return false;
+  Object.assign(t, patch);
+  await saveTasks(); render();
+  calShowUndo(t.id, old, 'Moved “' + t.title + '” to ' + calDayLabel(t.dueDate) + (t.time ? ', ' + formatTime12h(t.time) : '') + '.');
+  if(refocus) setTimeout(()=>{ const b = document.querySelector('[data-tid="' + t.id + '"]'); if(b && b.focus) b.focus(); }, 30);
+  return true;
+}
+function calDragTarget(d){
+  if(d.kind === 'mchip'){
+    const under = document.elementFromPoint(d.x, d.y), cell = under && under.closest ? under.closest('.big-calendar-cell') : null;
+    return cell && cell.dataset.ds ? { ds:cell.dataset.ds, cell } : null;
+  }
+  const wrap = document.querySelector('.tl-wrap'); if(!wrap) return null;
+  const wr = wrap.getBoundingClientRect(); if(d.x < wr.left || d.x > wr.right) return null;
+  const col = Array.from(document.querySelectorAll('.tl-col')).find(c=>{ const r = c.getBoundingClientRect(); return d.x >= r.left && d.x < r.right; });
+  if(!col) return null;
+  if(d.kind === 'chip') return { ds:col.dataset.ds, col };
+  const sr = document.querySelector('.tl-scroll').getBoundingClientRect();
+  if(d.y < sr.top - 30 || d.y > sr.bottom + 30) return null; // let go well outside the hours grid: no move
+  const lo = Number(col.closest('.tl-inner').dataset.lo), r = col.getBoundingClientRect(), hiMin = lo * 60 + Math.round(r.height * 60 / CAL_PPH);
+  let m = Math.round(((d.y - d.offY - r.top) * 60 / CAL_PPH + lo * 60) / 15) * 15;
+  m = Math.max(lo * 60, Math.min(m, hiMin - d.vis));
+  return { ds:col.dataset.ds, col, start:m, lo };
+}
+function calDragUpdate(){
+  const d = calDrag; if(!d || !d.active) return;
+  d.tip.style.left = Math.max(4, Math.min(d.x + 14, window.innerWidth - 160)) + 'px'; d.tip.style.top = (d.y + 14) + 'px';
+  document.querySelectorAll('.tl-drop').forEach(n=>n.remove());
+  document.querySelectorAll('.tl-col.drop, .big-calendar-cell.drop').forEach(n=>n.classList.remove('drop'));
+  const tg = d.target = calDragTarget(d); if(!tg) return;
+  if(d.kind === 'block'){
+    tg.col.appendChild(el('div', {class:'tl-drop', style:'top:' + ((tg.start - tg.lo * 60) * CAL_PPH / 60) + 'px; height:' + Math.max(d.vis * CAL_PPH / 60, 22) + 'px'}, formatTimeRange(calMoved(d.t, tg.start))));
+  } else (tg.col || tg.cell).classList.add('drop');
+}
+function calDragLoop(){ // scrolls the timeline while an item is held near its edge
+  const d = calDrag; if(!d || !d.active) return;
+  let moved = false;
+  if(d.kind !== 'mchip'){
+    const sc = document.querySelector('.tl-scroll'), wrap = document.querySelector('.tl-wrap'), edge = 40, speed = (over)=>Math.max(-16, Math.min(16, Math.ceil(over / 4)));
+    if(sc){ const r = sc.getBoundingClientRect(); let dy = 0; if(d.y < r.top + edge) dy = speed(d.y - (r.top + edge)); else if(d.y > r.bottom - edge) dy = speed(d.y - (r.bottom - edge)); if(dy){ const b = sc.scrollTop; sc.scrollTop += dy; moved = moved || sc.scrollTop !== b; } }
+    if(wrap){ const r = wrap.getBoundingClientRect(); let dx = 0; if(d.x < r.left + edge) dx = speed(d.x - (r.left + edge)); else if(d.x > r.right - edge) dx = speed(d.x - (r.right - edge)); if(dx){ const b = wrap.scrollLeft; wrap.scrollLeft += dx; moved = moved || wrap.scrollLeft !== b; } }
+  }
+  if(moved) calDragUpdate();
+  d.raf = requestAnimationFrame(calDragLoop);
+}
+function calDragActivate(){
+  const d = calDrag; if(!d || d.active) return;
+  clearTimeout(d.timer); d.active = true;
+  d.src.classList.add('drag-src'); document.body.classList.add('cal-dragging');
+  try{ d.src.setPointerCapture(d.id); }catch(e){}
+  if(navigator.vibrate){ try{ navigator.vibrate(12); }catch(e){} }
+  d.vis = d.t.time ? calVisibleLen(d.t) : 0;
+  d.tip = el('div', {class:'cal-dragtip'}, d.t.title); document.body.appendChild(d.tip);
+  calDragUpdate(); d.raf = requestAnimationFrame(calDragLoop);
+}
+function calDragCleanup(){
+  const d = calDrag; if(!d) return;
+  clearTimeout(d.timer); cancelAnimationFrame(d.raf);
+  d.src.classList.remove('drag-src'); try{ d.src.releasePointerCapture(d.id); }catch(e){}
+  document.body.classList.remove('cal-dragging'); if(d.tip) d.tip.remove();
+  document.querySelectorAll('.tl-drop').forEach(n=>n.remove());
+  document.querySelectorAll('.tl-col.drop, .big-calendar-cell.drop').forEach(n=>n.classList.remove('drop'));
+  document.removeEventListener('pointermove', calDragMove); document.removeEventListener('pointerup', calDragEnd); document.removeEventListener('pointercancel', calDragCancel);
+  calDrag = null;
+}
+function calSwallowNextClick(){ calSuppressClick = true; setTimeout(()=>{ calSuppressClick = false; }, 80); }
+function calDragMove(e){
+  const d = calDrag; if(!d || e.pointerId !== d.id) return;
+  d.x = e.clientX; d.y = e.clientY;
+  if(!d.active){
+    const dist = Math.hypot(d.x - d.x0, d.y - d.y0);
+    if(d.type === 'mouse'){ if(dist >= 5) calDragActivate(); }
+    else if(dist > 10) calDragCleanup(); // the finger moved before the hold finished: that is scrolling
+    return;
+  }
+  calDragUpdate();
+}
+async function calDragEnd(e){
+  const d = calDrag; if(!d || e.pointerId !== d.id) return;
+  const was = d.active, tg = d.target, t = d.t;
+  calDragCleanup();
+  if(!was) return;
+  calSwallowNextClick();
+  if(tg) await calCommitMove(t, tg.ds, tg.start != null ? tg.start : null, false);
+}
+function calDragCancel(){ const was = calDrag && calDrag.active; calDragCleanup(); if(was) calSwallowNextClick(); }
+document.addEventListener('pointerdown', function(e){
+  if(calDrag || !e.isPrimary || (e.pointerType === 'mouse' && e.button !== 0)) return;
+  const src = e.target.closest ? e.target.closest('.tl-block, .tl-chip, .cal-chip') : null;
+  if(!src || !src.dataset.tid) return;
+  const t = state.tasks.find(x=>x.id === src.dataset.tid); if(!t || t.completed) return;
+  calDrag = { t, src, kind: src.classList.contains('tl-block') ? 'block' : (src.classList.contains('tl-chip') ? 'chip' : 'mchip'),
+    id:e.pointerId, type:e.pointerType, x0:e.clientX, y0:e.clientY, x:e.clientX, y:e.clientY, offY:e.clientY - src.getBoundingClientRect().top, active:false, target:null, raf:0, vis:0 };
+  if(e.pointerType !== 'mouse') calDrag.timer = setTimeout(calDragActivate, 350);
+  document.addEventListener('pointermove', calDragMove); document.addEventListener('pointerup', calDragEnd); document.addEventListener('pointercancel', calDragCancel);
+});
+document.addEventListener('touchmove', function(e){ if(calDrag && calDrag.active && e.cancelable) e.preventDefault(); }, {passive:false});
+document.addEventListener('contextmenu', function(e){ if(calDrag) e.preventDefault(); });
+document.addEventListener('click', function(e){ if(calSuppressClick){ calSuppressClick = false; e.stopPropagation(); e.preventDefault(); } }, true);
+document.addEventListener('keydown', function(e){
+  if(e.key === 'Escape' && calDrag && calDrag.active){ e.preventDefault(); calDragCancel(); return; }
+  if(!e.shiftKey || e.altKey || e.ctrlKey || e.metaKey) return;
+  const dx = e.key === 'ArrowLeft' ? -1 : (e.key === 'ArrowRight' ? 1 : 0), dy = e.key === 'ArrowUp' ? -15 : (e.key === 'ArrowDown' ? 15 : 0);
+  if(!dx && !dy) return;
+  const src = e.target.closest ? e.target.closest('.tl-block, .tl-chip') : null; if(!src || !src.dataset.tid) return;
+  const t = state.tasks.find(x=>x.id === src.dataset.tid); if(!t || t.completed) return;
+  e.preventDefault();
+  let ds = t.dueDate; if(dx){ const d = parseDate(ds); d.setDate(d.getDate() + dx); ds = fmt(d); }
+  let start = null; if(dy && t.time){ start = Math.max(0, Math.min(calToMin(t.time) + dy, 24 * 60 - calVisibleLen(t))); }
+  calCommitMove(t, ds, start, true);
+});
 function renderCalendarTabView(){
   const mode = calViewMode();
-  return el('div', {class:'cal-views'}, renderCalViewBar(mode), mode === 'month' ? renderCalendarTabViewLegacy() : renderCalTimeline(mode));
+  return el('div', {class:'cal-views'}, renderCalViewBar(mode), calHint(mode), mode === 'month' ? renderCalendarTabViewLegacy() : renderCalTimeline(mode));
 }
 function renderCalendarTabViewLegacy(){
   return el('div',{class:'big-calendar-layout'},
