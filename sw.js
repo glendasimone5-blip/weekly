@@ -42,3 +42,7 @@ self.addEventListener('notificationclick', (e) => {
     return self.clients.openWindow(self.registration.scope);
   })());
 });
+
+// Pass-through: lets browsers treat Weekly as an installable app. It does not cache, change or
+// read any request, so the app keeps loading straight from the network exactly as before.
+self.addEventListener('fetch', () => {});
