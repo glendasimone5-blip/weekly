@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob:; connect-src 'self' https://weekly-push.glendasimone5.workers.dev https://nominatim.openstreetmap.org; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
 <title>Weekly — Task Console</title>
-<meta name="app-version" content="2026-11-10a">
+<meta name="app-version" content="2026-11-11a">
 <meta name="theme-color" content="#12142C">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" type="image/svg+xml" href="icons/icon.svg">
@@ -16,7 +16,7 @@ if('serviceWorker' in navigator && location.protocol === 'https:'){ window.addEv
 </script>
 <meta name="push-server" content="https://weekly-push.glendasimone5.workers.dev">
 <meta name="vapid-public" content="BC-oohRYdwdxzqXouwUBrQaCByRvzuUjy8b4DJceMHyCqO3XHOEfJklA7L0F82DayZs8B2XPIiYBkvV8MpSXRt8">
-<meta name="app-notes" content="Reminder popups, period heads-up, start and end check-ins, reminders that work when the app is closed, a wider layout, a full-page Settings, reminders set relative to the event (like 10 minutes before), add-on-selected-day, a Today button and titles in the calendar, editing repeating items (this one, this and following, all), flexible repeats (every N, chosen weekdays, an end date), places on events with address search, sync between your devices (encrypted so the server cannot read it), a connection allow-list, a problem log in Settings, and an optional app lock that encrypts data on the device and locks when idle, a way to change the sync code, encrypted backups (and backups no longer include the sync code), and no outside services (the chart, image and font files now come from this site), a welcome screen for new people, privacy policy and terms pages, and a health-information notice before period tracking is switched on, a layout built for phones (forms that scroll, bigger touch targets, a scrolling tab bar), and a friendly page-not-found screen, event end times, editing completed tasks, a new weekly balance view, backup and restore, a New Task button that opens the full form, and UK-style dates, 24-hour time and a choice of Monday or Sunday as the first day of the week, plus calmer wording in the Report insights, Week and Day views on the Calendar tab, drag to reschedule, bold day numbers at the top of each calendar day, a Recovery card with regular backup reminders, and install-as-an-app support for Android.">
+<meta name="app-notes" content="Reminder popups, period heads-up, start and end check-ins, reminders that work when the app is closed, a wider layout, a full-page Settings, reminders set relative to the event (like 10 minutes before), add-on-selected-day, a Today button and titles in the calendar, editing repeating items (this one, this and following, all), flexible repeats (every N, chosen weekdays, an end date), places on events with address search, sync between your devices (encrypted so the server cannot read it), a connection allow-list, a problem log in Settings, and an optional app lock that encrypts data on the device and locks when idle, a way to change the sync code, encrypted backups (and backups no longer include the sync code), and no outside services (the chart, image and font files now come from this site), a welcome screen for new people, privacy policy and terms pages, and a health-information notice before period tracking is switched on, a layout built for phones (forms that scroll, bigger touch targets, a scrolling tab bar), and a friendly page-not-found screen, event end times, editing completed tasks, a new weekly balance view, backup and restore, a New Task button that opens the full form, and UK-style dates, 24-hour time and a choice of Monday or Sunday as the first day of the week, plus calmer wording in the Report insights, Week and Day views on the Calendar tab, drag to reschedule, bold day numbers at the top of each calendar day, a Recovery card with regular backup reminders, install-as-an-app support for Android, and an optional, private way to log how you feel.">
 <script>
   // Runs before anything else in <head>, including the external libraries
   // below (which block parsing while they load) — otherwise the theme
@@ -903,6 +903,51 @@ if('serviceWorker' in navigator && location.protocol === 'https:'){ window.addEv
   .recovery-help li{ margin-bottom:6px; }
   .backup-nudge{ flex-wrap:wrap; gap:10px 16px; }
   .backup-nudge-actions{ display:flex; gap:8px; flex-wrap:wrap; }
+  /* ---------- Symptom tracking ---------- */
+  .sym-card{ background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:14px 16px; margin-bottom:12px; }
+  .sym-card-title{ font-weight:700; font-size:15px; margin-bottom:2px; color:var(--text); }
+  .sym-card-actions{ display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; }
+  .sym-modal{ max-width:540px; }
+  .sym-modal h2{ margin:0 0 4px; font-size:18px; }
+  .sym-nav{ display:grid; grid-template-columns:48px 1fr 48px; align-items:center; gap:8px; margin:8px 0; }
+  .sym-nav button{ width:48px; min-height:40px; padding:0; font-size:18px; flex:none; order:0; }
+  .sym-nav button[disabled]{ opacity:0.4; cursor:not-allowed; }
+  .sym-nav-label{ font-weight:600; color:var(--text); font-size:14px; text-align:center; }
+  .sym-group-title{ font-family:var(--mono); font-size:10.5px; letter-spacing:0.08em; text-transform:uppercase; color:var(--text-faint); margin:14px 0 6px; }
+  .sym-chips{ display:flex; flex-wrap:wrap; gap:6px; }
+  .sym-chip{ display:inline-flex; align-items:center; gap:6px; min-height:40px; padding:6px 13px; border-radius:999px; border:1px solid var(--border); background:var(--bg); color:var(--text); font-size:13px; }
+  .sym-chip.on{ border-color:var(--accent); background:var(--surface-2); }
+  .sym-chip.lv3{ border-width:2px; padding:5px 12px; }
+  .sym-pips{ font-size:10px; letter-spacing:1px; color:var(--accent); }
+  .sym-lvl{ font-size:11px; color:var(--text-dim); }
+  .sym-none-row{ margin:14px 0 12px; }
+  .sym-none-row button, .sym-custom-row button{ flex:none; width:auto; padding:8px 14px; }
+  .sym-input{ flex:1; min-width:0; background:var(--bg); border:1px solid var(--border); color:var(--text); border-radius:7px; padding:9px 11px; font-size:13px; font-family:inherit; }
+  .sym-none-on{ display:flex; align-items:center; justify-content:space-between; gap:10px; color:var(--text); font-size:13px; }
+  .sym-note{ width:100%; min-height:64px; background:var(--bg); border:1px solid var(--border); color:var(--text); border-radius:7px; padding:9px 11px; font-size:13px; font-family:inherit; resize:vertical; }
+  .sym-group-toggle{ flex-wrap:wrap; }
+  .sym-group-hint{ display:block; width:100%; margin:0 0 4px 24px; }
+  .sym-custom-row{ margin:4px 0; }
+  .sym-panel{ margin-bottom:18px; }
+  .sym-caption{ font-size:12px; color:var(--text-dim); margin:2px 0 8px; }
+  .sym-grid-wrap{ overflow-x:auto; border:1px solid var(--border); border-radius:10px; background:var(--surface); padding:8px 0 8px 0; max-width:100%; }
+  .sym-grid{ display:grid; column-gap:3px; row-gap:0; align-items:stretch; width:max-content; padding:0 8px; }
+  .sym-corner, .sym-rowlabel{ position:sticky; left:0; background:var(--surface); z-index:2; box-shadow:3px 0 0 var(--surface); }
+  .sym-corner{ height:28px; }
+  .sym-rowlabel{ display:block; height:28px; line-height:28px; font-size:12px; color:var(--text); padding-right:8px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:150px; }
+  .sym-day{ width:24px; height:28px; padding:0; border:none; border-bottom:2px solid transparent; background:transparent; color:var(--text-dim); font-size:11px; font-family:var(--mono); border-radius:4px 4px 0 0; }
+  .sym-day.has{ border-bottom-color:var(--accent); color:var(--text); }
+  .sym-day.none{ border-bottom-style:dashed; }
+  .sym-day.today{ font-weight:800; color:var(--text); }
+  .sym-cell{ width:24px; height:22px; margin:3px 0; border-radius:5px; display:flex; align-items:center; justify-content:center; font-size:11px; font-family:var(--mono); color:var(--text); }
+  .sym-cell.lv1{ border:1px solid var(--accent); }
+  .sym-cell.lv2{ border:1px solid var(--accent); background:var(--surface-2); }
+  .sym-cell.lv3{ border:1px solid var(--accent); background:var(--accent); color:var(--on-accent); font-weight:700; }
+  .sym-summary{ margin-top:16px; }
+  .sym-summary-controls{ display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin:10px 0; }
+  .sym-notes-toggle{ font-size:13px; color:var(--text-dim); display:inline-flex; align-items:center; gap:4px; }
+  .sym-preview{ margin:6px 0; font-size:12.5px; color:var(--text-dim); }
+  .sym-pre{ white-space:pre-wrap; word-break:break-word; background:var(--bg); border:1px solid var(--border); border-radius:8px; padding:10px 12px; font-size:12px; line-height:1.55; color:var(--text); max-height:320px; overflow:auto; }
   .fine{ text-align:center; color:var(--text-faint); font-size:11.5px; margin-top:30px; font-family:var(--mono); }
 
   /* ---------- Celebration: animation, toast, streak badge ---------- */
@@ -1113,6 +1158,7 @@ let state = {
   tasks: [],        // {id, title, category, dueDate('YYYY-MM-DD'), notes, completed, completedAt, createdAt}
   categories: ['Work','Home','Health'],
   meta: { lastReminderDate: null, seenBadges: [], appName: 'WEEKLY', calendarPlacement: 'sidebar', cloneCounts: {}, declinedHabitSuggestions: [], wrappedSeenYears: [], theme: 'moonlit', periodMigrationDone: false, notificationSound: 'chime' },
+  symptoms: { v:1, on:false, groups:['energy','mood','body'], custom:[], log:{}, tombs:{}, hideDate:'' },
   period: { cycleLength: 28, periodLength: 5, confirmedStarts: [], dayOverrides: {}, loggedPeriods: [], mode: 'cycle', pregnancy: { dueDate: null }, enabled: false },
   periodEditMode: false,
   periodLogFormOpen: false,
@@ -1281,6 +1327,11 @@ async function loadState(){
     const pl = await storageGet('plot');
     state.plot = pl ? Object.assign({ shuffledOrder:[], pointer:0, log:[] }, JSON.parse(pl.value)) : state.plot;
   }catch(e){ /* keep defaults */ }
+  try{
+    const sy = await storageGet('symptoms');
+    state.symptoms = sy ? symNormalise(JSON.parse(sy.value)) : symDefaults();
+    symVer++;
+  }catch(e){ state.symptoms = symDefaults(); }
   state.loaded = true;
 }
 async function saveTasks(){
@@ -1407,6 +1458,380 @@ function calendarGridDates(offset){
   const startWeekday = (firstOfMonth.getDay() + 7 - weekStartDow()) % 7; // 0 = first day of the chosen week
   const gridStart = new Date(year, month, 1 - startWeekday);
   return Array.from({length:42}, (_,i)=>{ const d = new Date(gridStart); d.setDate(gridStart.getDate()+i); return d; });
+}
+
+/* ============================ SYMPTOM TRACKING ============================ */
+// How you feel, logged by choice. One record per symptom per day, id "YYYY-MM-DD~symptom", plus one optional
+// day record "YYYY-MM-DD~_day" (the "no symptoms" tap and a short note). It has its own storage key so it can
+// sync record by record later. For now it stays on this device and in backups. Nothing here is sent anywhere.
+const SYM_GROUPS = [
+  { id:'energy',  name:'Energy and sleep', items:[['tired','Tired'],['poor_sleep','Poor sleep'],['restless','Restless']] },
+  { id:'mood',    name:'Mood',             items:[['low_mood','Low mood'],['anxious','Anxious'],['irritable','Irritable'],['tearful','Tearful']] },
+  { id:'body',    name:'Body',             items:[['headache','Headache'],['cramps','Cramps'],['back_pain','Back pain'],['aching_joints','Aching joints'],['bloating','Bloating'],['breast_tenderness','Breast tenderness'],['nausea','Nausea']] },
+  { id:'changes', name:'Changes',          items:[['hot_flushes','Hot flushes'],['night_sweats','Night sweats'],['brain_fog','Brain fog'],['palpitations','Palpitations'],['heavy_bleeding','Heavy bleeding']] }
+];
+const SYM_LEVELS = ['', 'Mild', 'Moderate', 'Strong'];
+const SYM_DEFAULT_GROUPS = ['energy','mood','body'];
+let symVer = 0, symIdx = null, symNoteTimer = null;
+
+function symDefaults(){ return { v:1, on:false, groups:SYM_DEFAULT_GROUPS.slice(), custom:[], log:{}, tombs:{}, hideDate:'' }; }
+function symNormalise(raw){
+  const out = symDefaults();
+  if(!raw || typeof raw !== 'object') return out;
+  out.on = raw.on === true;
+  if(Array.isArray(raw.groups)) out.groups = SYM_GROUPS.map(g=>g.id).filter(id=>raw.groups.indexOf(id) !== -1);
+  if(Array.isArray(raw.custom)) out.custom = raw.custom.filter(c=>c && typeof c.id === 'string' && /^c_[a-z0-9]{4,20}$/.test(c.id) && typeof c.name === 'string').slice(0, 60).map(c=>({ id:c.id, name:c.name.slice(0, 30), archived:c.archived === true }));
+  if(raw.log && typeof raw.log === 'object'){
+    let n = 0;
+    for(const k of Object.keys(raw.log)){
+      if(n >= 40000) break;
+      const r = raw.log[k];
+      if(!r || typeof r !== 'object' || !/^\d{4}-\d{2}-\d{2}$/.test(r.date || '')) continue;
+      const sid = String(r.sid || '');
+      if(k !== r.date + '~' + sid) continue;
+      if(sid === '_day'){
+        const note = typeof r.note === 'string' ? r.note.slice(0, 500) : '';
+        const none = r.none === true;
+        if(!none && !note) continue;
+        out.log[k] = { date:r.date, sid:'_day', none, note, _u:Number(r._u) || 0 };
+      } else {
+        if(!/^[a-z0-9_]{1,40}$/.test(sid)) continue;
+        const lv = Number(r.level);
+        if(!(lv >= 1 && lv <= 3)) continue;
+        out.log[k] = { date:r.date, sid, level:Math.round(lv), _u:Number(r._u) || 0 };
+      }
+      n++;
+    }
+  }
+  if(raw.tombs && typeof raw.tombs === 'object'){
+    let n = 0;
+    for(const k of Object.keys(raw.tombs)){ if(n++ >= 5000) break; const v = Number(raw.tombs[k]); if(/^\d{4}-\d{2}-\d{2}~[a-z0-9_]{1,40}$/.test(k) && v > 0) out.tombs[k] = v; }
+  }
+  out.hideDate = typeof raw.hideDate === 'string' ? raw.hideDate : '';
+  return out;
+}
+async function saveSymptoms(){
+  try{ await storageSet('symptoms', JSON.stringify(state.symptoms)); }catch(e){ console.error('save symptoms failed', e); }
+}
+function symIndex(){
+  const log = state.symptoms.log;
+  if(symIdx && symIdx.log === log && symIdx.ver === symVer) return symIdx.map;
+  const map = new Map();
+  for(const k in log){
+    const r = log[k]; let d = map.get(r.date);
+    if(!d){ d = { items:{}, count:0, none:false, note:'' }; map.set(r.date, d); }
+    if(r.sid === '_day'){ d.none = r.none === true; d.note = r.note || ''; }
+    else { d.items[r.sid] = r.level; d.count++; }
+  }
+  symIdx = { log, ver:symVer, map };
+  return map;
+}
+function symDay(date){ return symIndex().get(date) || { items:{}, count:0, none:false, note:'' }; }
+function symHasEntry(d){ return !!d && (d.count > 0 || d.none || !!d.note); }
+function symName(sid){
+  for(const g of SYM_GROUPS){ for(const it of g.items){ if(it[0] === sid) return it[1]; } }
+  const c = state.symptoms.custom.find(x=>x.id === sid);
+  return c ? c.name : String(sid).replace(/_/g, ' ');
+}
+function symDateLabel(ds){ return parseDate(ds).toLocaleDateString(dateLocale(), { day:'numeric', month:'short', year:'numeric' }); }
+function symStartOf(days){ const d = new Date(); d.setDate(d.getDate() - (days - 1)); return fmt(d); }
+function symDates(start, end){
+  const out = []; const d = parseDate(start); let guard = 0;
+  while(guard++ < 400){ const s = fmt(d); if(s > end) break; out.push(s); d.setDate(d.getDate() + 1); }
+  return out;
+}
+function symTomb(id){ const S = state.symptoms; S.tombs[id] = Date.now(); }
+
+/* ---- writing (these do not re-render; callers decide) ---- */
+function symSetLevel(date, sid, level){
+  const S = state.symptoms, id = date + '~' + sid, now = Date.now();
+  if(level > 0){
+    S.log[id] = { date, sid, level, _u:now }; delete S.tombs[id];
+    const dk = date + '~_day', d = S.log[dk];
+    if(d && d.none){ if(d.note){ d.none = false; d._u = now; } else { delete S.log[dk]; symTomb(dk); } }
+  } else if(S.log[id]){ delete S.log[id]; symTomb(id); }
+  symVer++;
+}
+function symSetNone(date, on){
+  const S = state.symptoms, now = Date.now(), k = date + '~_day';
+  if(on){
+    Object.keys(S.log).forEach(id=>{ const r = S.log[id]; if(r.date === date && r.sid !== '_day'){ delete S.log[id]; symTomb(id); } });
+    let r = S.log[k];
+    if(!r) r = S.log[k] = { date, sid:'_day', none:true, note:'', _u:now };
+    r.none = true; r._u = now; delete S.tombs[k];
+  } else {
+    const r = S.log[k];
+    if(r){ r.none = false; r._u = now; if(!r.note){ delete S.log[k]; symTomb(k); } }
+  }
+  symVer++;
+}
+function symSetNote(date, text){
+  const S = state.symptoms, now = Date.now(), k = date + '~_day';
+  text = String(text || '').slice(0, 500);
+  let r = S.log[k];
+  if(!text && !(r && r.none)){ if(r){ delete S.log[k]; symTomb(k); } }
+  else { if(!r) r = S.log[k] = { date, sid:'_day', none:false, note:'', _u:now }; r.note = text; r._u = now; delete S.tombs[k]; }
+  symVer++;
+}
+function symRerender(){
+  const ov = document.querySelector('.sym-overlay'); const top = ov ? ov.scrollTop : 0;
+  render();
+  const ov2 = document.querySelector('.sym-overlay'); if(ov2) ov2.scrollTop = top;
+}
+async function symToggle(on){
+  if(on && !state.meta.symptomNoticeAccepted){
+    const ok = confirm('Logging how you feel uses health information.\n\n• It stays on this device. It only leaves if you save a backup file.\n• It is not synced between devices yet.\n• We cannot see it.\n• It is a personal record, not medical advice. If something worries you, speak to a doctor or another qualified professional.\n\nTurn it on?');
+    if(!ok){ render(); return; }
+    state.meta.symptomNoticeAccepted = new Date().toISOString().slice(0, 10); saveMeta();
+  }
+  state.symptoms.on = on; await saveSymptoms(); render();
+}
+async function symAddCustom(name){
+  name = String(name || '').trim().replace(/\s+/g, ' ').slice(0, 30);
+  if(!name) return 'Type a name first.';
+  const S = state.symptoms, lower = name.toLowerCase();
+  if(S.custom.filter(c=>!c.archived).length >= 20) return 'You can add up to 20 of your own.';
+  if(S.custom.some(c=>!c.archived && c.name.toLowerCase() === lower) || SYM_GROUPS.some(g=>g.items.some(it=>it[1].toLowerCase() === lower))) return 'That one is already in the list.';
+  S.custom.push({ id:'c_' + (Math.random().toString(36) + '000000').slice(2, 8), name, archived:false });
+  await saveSymptoms();
+  return '';
+}
+async function symDeleteAll(){
+  const S = state.symptoms, now = Date.now();
+  Object.keys(S.log).forEach(id=>{ S.tombs[id] = now; });
+  S.log = {}; S.hideDate = ''; symVer++;
+  await saveSymptoms();
+}
+
+/* ---- the daily check-in card ---- */
+function renderSymptomCheckinCard(){
+  const S = state.symptoms; if(!S.on) return null;
+  const t = todayStr();
+  if(S.hideDate === t || symHasEntry(symIndex().get(t))) return null;
+  return el('div', {class:'sym-card', role:'region', 'aria-label':'Daily check-in'},
+    el('div', {class:'sym-card-title'}, 'How are you doing today?'),
+    el('div', {class:'settings-hint'}, 'A quick note about how you feel. Completely optional.'),
+    el('div', {class:'sym-card-actions'},
+      el('button', {type:'button', class:'settings-action-btn', onclick:()=>symOpenLogger(t)}, 'Log how I feel'),
+      el('button', {type:'button', class:'quickadd-full-btn', onclick: async ()=>{ symSetNone(t, true); await saveSymptoms(); render(); }}, 'Nothing to log today'),
+      el('button', {type:'button', class:'quickadd-full-btn', onclick: async ()=>{ state.symptoms.hideDate = t; await saveSymptoms(); render(); }}, 'Not now')));
+}
+
+/* ---- the logger ---- */
+function symOpenLogger(date){ state.symDate = date || todayStr(); state.symOpen = true; state.modalOpen = true; render(); }
+function symCloseLogger(){ clearTimeout(symNoteTimer); saveSymptoms(); state.symOpen = false; state.modalOpen = false; render(); }
+function symShift(n){
+  const d = parseDate(state.symDate || todayStr()); d.setDate(d.getDate() + n);
+  const s = fmt(d);
+  if(s > todayStr() || s < '2000-01-01') return;
+  clearTimeout(symNoteTimer); saveSymptoms();
+  state.symDate = s; symRerender();
+}
+function symChip(date, sid, name, level){
+  const b = el('button', {type:'button'});
+  const paint = (lv)=>{
+    b.className = 'sym-chip' + (lv ? ' on lv' + lv : '');
+    b.setAttribute('aria-pressed', lv ? 'true' : 'false');
+    b.setAttribute('aria-label', name + ', ' + (lv ? SYM_LEVELS[lv].toLowerCase() : 'not logged') + '. Tap to change.');
+    b.textContent = '';
+    b.appendChild(el('span', {class:'sym-chip-name'}, name));
+    if(lv){
+      b.appendChild(el('span', {class:'sym-pips', 'aria-hidden':'true'}, '●'.repeat(lv) + '○'.repeat(3 - lv)));
+      b.appendChild(el('span', {class:'sym-lvl'}, SYM_LEVELS[lv]));
+    }
+  };
+  let cur = level; paint(cur);
+  b.addEventListener('click', ()=>{
+    const hadNone = symDay(date).none;
+    cur = (cur + 1) % 4; paint(cur);
+    symSetLevel(date, sid, cur); saveSymptoms();
+    if(hadNone) symRerender();
+  });
+  return b;
+}
+function symVisibleGroups(date){
+  const S = state.symptoms, out = [], seen = new Set();
+  SYM_GROUPS.forEach(g=>{ if(S.groups.indexOf(g.id) !== -1){ out.push({ name:g.name, items:g.items.slice() }); g.items.forEach(it=>seen.add(it[0])); } });
+  const mine = S.custom.filter(c=>!c.archived).map(c=>[c.id, c.name]);
+  if(mine.length){ out.push({ name:'Added by you', items:mine }); mine.forEach(it=>seen.add(it[0])); }
+  const extra = Object.keys(symDay(date).items).filter(sid=>!seen.has(sid)).map(sid=>[sid, symName(sid)]);
+  if(extra.length) out.push({ name:'Also logged on this day', items:extra });
+  return out;
+}
+function renderSymptomLogger(){
+  const date = state.symDate || todayStr(), isToday = date === todayStr(), day = symDay(date);
+  const label = isToday ? 'Today' : parseDate(date).toLocaleDateString(dateLocale(), { weekday:'short', day:'numeric', month:'short', year:(date.slice(0, 4) === todayStr().slice(0, 4) ? undefined : 'numeric') });
+  const modal = el('div', {class:'modal sym-modal', role:'dialog', 'aria-modal':'true', 'aria-label':'How you feel'},
+    el('h2', {}, 'How you feel'),
+    el('div', {class:'sym-nav'},
+      el('button', {type:'button', class:'quickadd-full-btn', 'aria-label':'Previous day', onclick:()=>symShift(-1)}, '‹'),
+      el('div', {class:'sym-nav-label', 'aria-live':'polite'}, label),
+      el('button', {type:'button', class:'quickadd-full-btn', 'aria-label':'Next day', ...(isToday ? {disabled:'disabled'} : {}), onclick:()=>symShift(1)}, '›')),
+    el('div', {class:'settings-hint'}, 'Tap a symptom once for mild, again for moderate, again for strong, and once more to clear it.'));
+  symVisibleGroups(date).forEach(g=>{
+    modal.appendChild(el('div', {class:'sym-group-title'}, g.name));
+    modal.appendChild(el('div', {class:'sym-chips'}, g.items.map(it=>symChip(date, it[0], it[1], day.items[it[0]] || 0))));
+  });
+  modal.appendChild(el('div', {class:'sym-none-row'},
+    day.none
+      ? el('div', {class:'sym-none-on'}, el('span', {}, '✓ Marked as no symptoms'), el('button', {type:'button', class:'quickadd-full-btn', onclick: async ()=>{ symSetNone(date, false); await saveSymptoms(); symRerender(); }}, 'Undo'))
+      : (day.count === 0 ? el('button', {type:'button', class:'quickadd-full-btn', onclick: async ()=>{ symSetNone(date, true); await saveSymptoms(); symRerender(); }}, 'No symptoms to log') : null)));
+  modal.appendChild(el('div', {class:'field'},
+    el('label', {for:'sym-note'}, 'A note, if you like'),
+    el('textarea', {id:'sym-note', class:'sym-note', maxlength:'500', rows:'3', placeholder:'Anything worth remembering about today',
+      oninput:(e)=>{ symSetNote(date, e.target.value); clearTimeout(symNoteTimer); symNoteTimer = setTimeout(saveSymptoms, 400); } }, day.note || '')));
+  modal.appendChild(el('div', {class:'settings-hint'}, 'Stays on this device and in your backups. A personal record, not medical advice.'));
+  modal.appendChild(el('div', {class:'modal-actions'}, el('button', {type:'button', class:'primary', onclick: symCloseLogger}, 'Done')));
+  return el('div', {class:'overlay sym-overlay', onclick:(e)=>{ if(e.target.classList.contains('overlay')) symCloseLogger(); }}, modal);
+}
+
+/* ---- Settings ---- */
+function renderSymptomSettings(){
+  const S = state.symptoms, hasData = Object.keys(S.log).length > 0;
+  const sec = el('div', {class:'settings-section'}, el('div', {class:'settings-section-title'}, 'How you feel'));
+  sec.appendChild(el('label', {class:'settings-toggle-row'},
+    el('input', {type:'checkbox', ...(S.on ? {checked:'checked'} : {}), onchange:(e)=>{ symToggle(e.target.checked); }}),
+    ' Log how I feel'));
+  if(S.on){
+    const hints = { changes:'Hot flushes, night sweats, brain fog and similar. Some people like to log these around perimenopause and menopause.' };
+    SYM_GROUPS.forEach(g=>{
+      sec.appendChild(el('label', {class:'settings-toggle-row sym-group-toggle'},
+        el('input', {type:'checkbox', ...(S.groups.indexOf(g.id) !== -1 ? {checked:'checked'} : {}), onchange: async (e)=>{
+          const set = new Set(S.groups); if(e.target.checked) set.add(g.id); else set.delete(g.id);
+          S.groups = SYM_GROUPS.map(x=>x.id).filter(id=>set.has(id)); await saveSymptoms(); render(); }}),
+        ' ' + g.name, hints[g.id] ? el('span', {class:'settings-hint sym-group-hint'}, hints[g.id]) : null));
+    });
+    const mine = S.custom.filter(c=>!c.archived);
+    sec.appendChild(el('div', {class:'sym-group-title'}, 'Your own'));
+    mine.forEach(c=>sec.appendChild(el('div', {class:'settings-row sym-custom-row'}, el('span', {}, c.name),
+      el('button', {type:'button', class:'quickadd-full-btn', 'aria-label':'Remove ' + c.name, onclick: async ()=>{ c.archived = true; await saveSymptoms(); render(); }}, 'Remove'))));
+    const inp = el('input', {type:'text', id:'sym-custom-input', class:'sym-input', maxlength:'30', placeholder:'Add your own, e.g. Dizzy',
+      onkeydown:(e)=>{ if(e.key === 'Enter'){ e.preventDefault(); add.click(); } } });
+    const add = el('button', {type:'button', class:'settings-action-btn', onclick: async ()=>{ state.symMsg = await symAddCustom(inp.value); render(); }}, 'Add');
+    sec.appendChild(el('div', {style:'display:flex; gap:8px; margin-top:8px;'}, inp, add));
+    if(state.symMsg) sec.appendChild(el('div', {class:'settings-hint', role:'status', style:'margin-top:6px; color:var(--text);'}, state.symMsg));
+    if(mine.length) sec.appendChild(el('div', {class:'settings-hint'}, 'Removing one hides it from the list. Anything you already logged with it stays in your history.'));
+  } else if(hasData){
+    sec.appendChild(el('div', {class:'settings-hint'}, 'Switched off. Your earlier entries are kept and still show in the Report tab.'));
+  }
+  sec.appendChild(el('div', {class:'settings-hint', style:'margin-top:8px;'}, 'Optional and off until you turn it on. What you log stays on this device and goes into the backup files you save. It is not synced between devices yet, and Weekly cannot see it.'));
+  if(hasData){
+    sec.appendChild(el('button', {type:'button', class:'settings-danger-btn', style:'margin-top:10px;', onclick: async ()=>{
+      if(confirm('Delete every symptom entry on this device? Backup files you already saved keep their own copy. This cannot be undone.')){ await symDeleteAll(); render(); }
+    }}, 'Delete all symptom entries'));
+  }
+  return sec;
+}
+
+/* ---- Report: the last four weeks, and a summary for an appointment ---- */
+function symBuildSummary(days, withNotes){
+  const end = todayStr(), start = symStartOf(days), idx = symIndex();
+  const per = {}, notes = []; let total = 0, entryDays = 0, noneDays = 0;
+  symDates(start, end).forEach(ds=>{
+    total++;
+    const d = idx.get(ds); if(!d) return;
+    if(symHasEntry(d)) entryDays++;
+    if(d.none) noneDays++;
+    Object.keys(d.items).forEach(sid=>{ const lv = d.items[sid]; const p = per[sid] || (per[sid] = { days:0, lv:[0, 0, 0, 0] }); p.days++; p.lv[lv]++; });
+    if(withNotes && d.note) notes.push([ds, d.note]);
+  });
+  const dn = n=>n + (n === 1 ? ' day' : ' days');
+  const span = { 31:'the last month', 92:'the last 3 months', 183:'the last 6 months' }[days] || ('the last ' + days + ' days');
+  const L = [];
+  L.push('How I have been feeling: ' + symDateLabel(start) + ' to ' + symDateLabel(end));
+  L.push('Made from entries I logged myself in Weekly, covering ' + span + '.');
+  L.push('');
+  L.push('Days with an entry: ' + entryDays + ' of ' + total + (noneDays ? ' (' + dn(noneDays) + ' marked as no symptoms)' : '') + '.');
+  L.push('');
+  const sids = Object.keys(per).sort((a, b)=>per[b].days - per[a].days || symName(a).localeCompare(symName(b)));
+  if(!sids.length){ L.push('No symptoms were logged in this time.'); }
+  else {
+    L.push('Symptoms logged (days, then mild / moderate / strong):');
+    sids.forEach(sid=>{ const p = per[sid]; L.push('- ' + symName(sid) + ': ' + dn(p.days) + ' (' + p.lv[1] + ' / ' + p.lv[2] + ' / ' + p.lv[3] + ')'); });
+  }
+  const today = todayStr();
+  const periods = (state.period.loggedPeriods || []).filter(p=>p.start <= end && (p.end || today) >= start).sort((a, b)=>a.start.localeCompare(b.start));
+  if(periods.length){
+    L.push(''); L.push('Periods I logged in this time:');
+    periods.forEach(p=>L.push('- ' + symDateLabel(p.start) + (p.end ? ' to ' + symDateLabel(p.end) : ' (ongoing)')));
+  }
+  if(notes.length){
+    L.push(''); L.push('Notes I added:');
+    notes.forEach(n=>L.push('- ' + symDateLabel(n[0]) + ': ' + n[1].replace(/\s+/g, ' ')));
+  }
+  L.push(''); L.push('This only reflects the days I chose to log. It is a personal record, not a medical one.');
+  return L.join('\n');
+}
+async function symCopySummary(text){
+  try{ await navigator.clipboard.writeText(text); state.symStatus = 'Copied. You can paste it into a message or a note.'; }
+  catch(e){ state.symStatus = 'Could not copy here. Use “Save as a text file” instead.'; }
+  symStatusRender();
+}
+function symDownloadSummary(text){
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([text], { type:'text/plain' }));
+  a.download = 'weekly-symptom-summary-' + todayStr() + '.txt';
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href), 1000);
+  state.symStatus = 'Saved as a plain text file. It is not encrypted, so keep it somewhere private.';
+  symStatusRender();
+}
+function symStatusRender(){
+  render();
+  setTimeout(()=>{ if(state.symStatus){ state.symStatus = ''; if(state.view === 'report' && !state.modalOpen && !state.settingsOpen && !state.editingAppName) render(); } }, 7000);
+}
+function renderSymptomGrid(){
+  const idx = symIndex(), today = todayStr(), N = 28, dates = symDates(symStartOf(N), today);
+  const tally = {};
+  dates.forEach(ds=>{ const d = idx.get(ds); if(d) Object.keys(d.items).forEach(sid=>{ tally[sid] = (tally[sid] || 0) + 1; }); });
+  const sids = Object.keys(tally).sort((a, b)=>tally[b] - tally[a] || symName(a).localeCompare(symName(b)));
+  const grid = el('div', {class:'sym-grid', style:'grid-template-columns:minmax(104px,max-content) repeat(' + dates.length + ', 24px);'});
+  grid.appendChild(el('div', {class:'sym-corner'}));
+  dates.forEach(ds=>{
+    const d = idx.get(ds), has = symHasEntry(d);
+    const lab = parseDate(ds).toLocaleDateString(dateLocale(), { weekday:'short', day:'numeric', month:'short' });
+    grid.appendChild(el('button', {type:'button', class:'sym-day' + (ds === today ? ' today' : '') + (has ? ' has' : '') + (d && d.none ? ' none' : ''),
+      'aria-label': lab + (d && d.none ? ', marked as no symptoms' : (has ? ', has an entry' : ', no entry')) + '. Open to edit.', title: lab,
+      onclick:()=>symOpenLogger(ds)}, String(parseDate(ds).getDate())));
+  });
+  sids.forEach(sid=>{
+    grid.appendChild(el('div', {class:'sym-rowlabel', title:symName(sid)}, symName(sid)));
+    dates.forEach(ds=>{
+      const lv = (idx.get(ds) || { items:{} }).items[sid];
+      grid.appendChild(lv ? el('div', {class:'sym-cell lv' + lv, title:symName(sid) + ', ' + SYM_LEVELS[lv].toLowerCase() + ', ' + ds}, String(lv)) : el('div', {class:'sym-cell'}));
+    });
+  });
+  const wrap = el('div', {class:'sym-grid-wrap', tabindex:'0', role:'region', 'aria-label':'Symptoms over the last four weeks'}, grid);
+  setTimeout(()=>{ wrap.scrollLeft = wrap.scrollWidth; }, 0);
+  return { wrap, any:sids.length > 0, first:dates[0], last:dates[dates.length - 1] };
+}
+function renderSymptomReportPanel(){
+  const S = state.symptoms, hasData = Object.keys(S.log).length > 0;
+  if(!S.on && !hasData) return null;
+  const panel = el('div', {class:'sym-panel'});
+  panel.appendChild(el('div', {class:'section-title'}, 'How you’ve been feeling'));
+  if(!S.on) panel.appendChild(el('div', {class:'settings-hint', style:'margin-bottom:8px;'}, 'Logging is switched off. Your earlier entries are kept here. You can turn it back on in Settings.'));
+  const g = renderSymptomGrid();
+  panel.appendChild(el('div', {class:'sym-caption'}, 'Last four weeks, ' + parseDate(g.first).toLocaleDateString(dateLocale(), { day:'numeric', month:'short' }) + ' to ' + parseDate(g.last).toLocaleDateString(dateLocale(), { day:'numeric', month:'short' }) + '. Tap a day to add or change its entry.'));
+  panel.appendChild(g.wrap);
+  panel.appendChild(el('div', {class:'settings-hint', style:'margin-top:6px;'}, (g.any ? '1 mild, 2 moderate, 3 strong. ' : 'Nothing logged in the last four weeks. ') + 'A day with a line under its number has an entry; a dashed line means you marked it as no symptoms.'));
+  if(S.on) panel.appendChild(el('div', {style:'margin-top:10px;'}, el('button', {type:'button', class:'settings-action-btn', onclick:()=>symOpenLogger(todayStr())}, 'Log today')));
+  const days = [31, 92, 183].indexOf(state.symSummaryDays) !== -1 ? state.symSummaryDays : 92;
+  const withNotes = state.symSummaryNotes === true;
+  const text = symBuildSummary(days, withNotes);
+  panel.appendChild(el('div', {class:'sym-summary'},
+    el('div', {class:'sym-group-title'}, 'Summary for an appointment'),
+    el('div', {class:'settings-hint'}, 'A plain-text summary of what you logged, to read out or share with a doctor or nurse if you choose to.'),
+    el('div', {class:'sym-summary-controls'},
+      el('select', {class:'calendar-placement-select', 'aria-label':'Time covered', onchange:(e)=>{ state.symSummaryDays = Number(e.target.value); render(); }},
+        [[31, 'Last month'], [92, 'Last 3 months'], [183, 'Last 6 months']].map(([v, l])=>el('option', {value:String(v), ...(days === v ? {selected:'selected'} : {})}, l))),
+      el('label', {class:'sym-notes-toggle'}, el('input', {type:'checkbox', ...(withNotes ? {checked:'checked'} : {}), onchange:(e)=>{ state.symSummaryNotes = e.target.checked; render(); }}), ' Include my notes')),
+    el('details', {class:'sym-preview'}, el('summary', {}, 'Preview'), el('pre', {class:'sym-pre'}, text)),
+    el('div', {class:'sym-card-actions'},
+      el('button', {type:'button', class:'settings-action-btn', onclick:()=>symCopySummary(text)}, 'Copy summary'),
+      el('button', {type:'button', class:'quickadd-full-btn', onclick:()=>symDownloadSummary(text)}, 'Save as a text file')),
+    state.symStatus ? el('div', {class:'settings-hint', role:'status', style:'margin-top:8px; color:var(--text);'}, state.symStatus) : null));
+  return panel;
 }
 
 /* ============================ PERIOD TRACKING ============================ */
@@ -2605,7 +3030,8 @@ function render(){
   if(state.scopeDialog){ app.appendChild(renderScopeDialog()); }
   if(state.showOnboarding){ app.appendChild(renderOnboarding()); }
   if(reminderPopups.length){ app.appendChild(renderReminderPopups()); }
-  if(state.modalOpen){ app.appendChild(renderModal()); }
+  if(!state.modalOpen){ state.symOpen = false; }
+  if(state.modalOpen){ app.appendChild(state.symOpen ? renderSymptomLogger() : renderModal()); }
   if(state.showWrappedIntro){ app.appendChild(renderWrappedModal()); }
   /* settings is a full page now (see renderSettingsPage) */
 
@@ -2733,15 +3159,16 @@ async function applyBackupPayload(p){
   state.meta = Object.assign({}, state.meta, stripDeviceMeta(d.meta || {}));
   state.period = Object.assign({ cycleLength:28, periodLength:5, confirmedStarts:[], dayOverrides:{}, loggedPeriods:[], mode:'cycle', pregnancy:{dueDate:null}, enabled:false }, d.period || {});
   state.plot = Object.assign({ shuffledOrder:[], pointer:0, log:[] }, d.plot || {});
+  state.symptoms = symNormalise(d.symptoms); symVer++;
   migrateTaskFields(); migrateLegacyRecurring(); topUpAllSeries(); migratePeriodData();
   applyTheme(state.meta.theme);
-  await saveTasks(); await saveCategories(); await saveMeta(); await savePeriod(); await savePlot();
+  await saveTasks(); await saveCategories(); await saveMeta(); await savePeriod(); await savePlot(); await saveSymptoms();
   backupMsg('Backup restored.');
 }
 async function makeEncryptedBackupText(pass){
   const salt = toB64(crypto.getRandomValues(new Uint8Array(16)));
   const key = await lockImport(await lockDerive(pass, salt, LOCK_ITER));
-  const payload = { app:'weekly', version:1, exportedAt:new Date().toISOString(), data:{ tasks:state.tasks, categories:state.categories, meta:stripDeviceMeta(state.meta), period:state.period, plot:state.plot } };
+  const payload = { app:'weekly', version:1, exportedAt:new Date().toISOString(), data:{ tasks:state.tasks, categories:state.categories, meta:stripDeviceMeta(state.meta), period:state.period, plot:state.plot, symptoms:state.symptoms } };
   return JSON.stringify({ app:'weekly', version:1, encrypted:true, exportedAt:payload.exportedAt, kdf:{ salt, iter:LOCK_ITER }, blob: await lockEncrypt(JSON.stringify(payload), key) }, null, 2);
 }
 async function restoreEncryptedFromText(text, pass){
@@ -2780,7 +3207,7 @@ function exportBackup(){
   state.meta.lastBackupDate = todayStr();
   saveMeta();
   const payload = { app:'weekly', version:1, exportedAt:new Date().toISOString(),
-    data:{ tasks:state.tasks, categories:state.categories, meta:stripDeviceMeta(state.meta), period:state.period, plot:state.plot } };
+    data:{ tasks:state.tasks, categories:state.categories, meta:stripDeviceMeta(state.meta), period:state.period, plot:state.plot, symptoms:state.symptoms } };
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([JSON.stringify(payload,null,2)],{type:'application/json'}));
   a.download = 'weekly-backup-'+todayStr()+'.json';
@@ -2809,9 +3236,10 @@ function importBackup(){
     state.meta = Object.assign({}, state.meta, stripDeviceMeta(d.meta || {}));
     state.period = Object.assign({ cycleLength:28, periodLength:5, confirmedStarts:[], dayOverrides:{}, loggedPeriods:[], mode:'cycle', pregnancy:{dueDate:null}, enabled:false }, d.period || {});
     state.plot = Object.assign({ shuffledOrder:[], pointer:0, log:[] }, d.plot || {});
+  state.symptoms = symNormalise(d.symptoms); symVer++;
     migrateTaskFields(); migrateLegacyRecurring(); topUpAllSeries(); migratePeriodData();
     applyTheme(state.meta.theme);
-    await saveTasks(); await saveCategories(); await saveMeta(); await savePeriod(); await savePlot();
+    await saveTasks(); await saveCategories(); await saveMeta(); await savePeriod(); await savePlot(); await saveSymptoms();
     state.settingsOpen = false;
     state.toast = { text:'✓ Backup restored.' };
     render();
@@ -2827,7 +3255,9 @@ async function resetAllData(){
   state.period = { cycleLength:28, periodLength:5, confirmedStarts:[], dayOverrides:{}, loggedPeriods:[], mode:'cycle', pregnancy:{dueDate:null}, enabled:false };
   state.plot = { shuffledOrder:[], pointer:0, log:[] };
   state.meta = { lastReminderDate:null, seenBadges:[], appName:'WEEKLY', calendarPlacement:'sidebar', cloneCounts:{}, declinedHabitSuggestions:[], wrappedSeenYears:[], theme:'moonlit', periodMigrationDone:true, notificationSound:'chime' };
+  state.symptoms = symDefaults(); symVer++;
   applyTheme('moonlit');
+  await saveSymptoms();
   await saveTasks();
   await saveCategories();
   await savePeriod();
@@ -2917,6 +3347,8 @@ function renderSettingsModal(){
       el('div',{class:'settings-hint'}, "Adds a calendar toggle for logging periods, cycle-phase estimates, and pregnancy mode. Off by default for new installs — nothing shows unless this is switched on.")
     ),
 
+    renderSymptomSettings(),
+
     el('div',{class:'settings-section'},
       el('div',{class:'settings-section-title'}, 'Your data and recovery'),
       ...renderRecoveryCard()
@@ -2924,7 +3356,7 @@ function renderSettingsModal(){
 
     el('div',{class:'settings-section'},
       el('div',{class:'settings-section-title'}, 'Backup'),
-      el('div',{class:'settings-hint'}, (state.meta.lastBackupDate ? 'Last backup: '+niceDateLong(state.meta.lastBackupDate)+'. ' : 'No backup yet. ') + 'Saves everything (tasks, categories, period history, preferences) to a file you keep. Restoring replaces what is in the app now.'),
+      el('div',{class:'settings-hint'}, (state.meta.lastBackupDate ? 'Last backup: '+niceDateLong(state.meta.lastBackupDate)+'. ' : 'No backup yet. ') + 'Saves everything (tasks, categories, period history, symptom entries, preferences) to a file you keep. Restoring replaces what is in the app now.'),
       el('div',{style:'display:flex; gap:8px; margin-top:10px; flex-wrap:wrap;'},
         el('button',{class:'settings-action-btn', onclick: exportBackup}, '⬇ Save backup'),
         el('button',{class:'quickadd-full-btn', onclick: importBackup}, '⬆ Restore from backup')
@@ -2938,9 +3370,9 @@ function renderSettingsModal(){
     aboutSection(),
     el('div',{class:'settings-section settings-danger-zone'},
       el('div',{class:'settings-section-title'}, 'Data'),
-      el('div',{class:'settings-hint'}, 'For giving someone else a clean copy of this app — clears every task, category, period entry, and preference stored on this device or account.'),
+      el('div',{class:'settings-hint'}, 'For giving someone else a clean copy of this app — clears every task, category, period entry, symptom entry, and preference stored on this device or account.'),
       el('button',{class:'settings-danger-btn', onclick:()=>{
-        if(confirm('This clears every task, category, period entry, and preference. This cannot be undone. Save a backup first if you may want this data. Continue?')){
+        if(confirm('This clears every task, category, period entry, symptom entry, and preference. This cannot be undone. Save a backup first if you may want this data. Continue?')){
           resetAllData();
         }
       }}, '🗑 Reset all data')
@@ -3506,7 +3938,7 @@ function diagnosticsSection(){
 // passphrase (PBKDF2, 600,000 rounds). The key is held in memory and, so a reload does not ask again straight
 // away, in this tab's session storage until the idle time passes. A forgotten passphrase cannot be recovered.
 let lockKey = null, lockCfg = null, lockLastTouch = 0, lockWatching = false, LOCK_ITER = 600000;
-const LOCK_KEYS = ['tasks','categories','meta','period','plot','syncstate','diag'];
+const LOCK_KEYS = ['tasks','categories','meta','period','plot','syncstate','diag','symptoms'];
 const LOCK_OK_TEXT = 'weekly-lock-ok';
 function lockEnabled(){ return !!lockCfg; }
 async function storageRemoveRaw(key){
@@ -4679,6 +5111,7 @@ function renderWeekView(){
   stack.appendChild(renderQuickAddBar());
   const priorityPanel = renderPriorityPanel();
   if(priorityPanel){ stack.appendChild(priorityPanel); }
+  { const symCard = renderSymptomCheckinCard(); if(symCard){ stack.appendChild(symCard); } }
   stack.appendChild(renderTodayPanel());
   stack.appendChild(renderMain());
   layout.appendChild(stack);
@@ -5638,6 +6071,7 @@ function renderReportView(){
     });
   }
   wrap.appendChild(insightsPanel);
+  { const symPanel = renderSymptomReportPanel(); if(symPanel){ wrap.appendChild(symPanel); } }
 
   wrap.appendChild(renderAchievementsPanel());
 
