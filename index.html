@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob:; connect-src 'self' https://weekly-push.glendasimone5.workers.dev https://nominatim.openstreetmap.org; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
 <title>Weekly — Task Console</title>
-<meta name="app-version" content="2026-11-11b">
+<meta name="app-version" content="2026-11-11c">
 <meta name="theme-color" content="#12142C">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" type="image/svg+xml" href="icons/icon.svg">
@@ -16,7 +16,7 @@ if('serviceWorker' in navigator && location.protocol === 'https:'){ window.addEv
 </script>
 <meta name="push-server" content="https://weekly-push.glendasimone5.workers.dev">
 <meta name="vapid-public" content="BC-oohRYdwdxzqXouwUBrQaCByRvzuUjy8b4DJceMHyCqO3XHOEfJklA7L0F82DayZs8B2XPIiYBkvV8MpSXRt8">
-<meta name="app-notes" content="Reminder popups, period heads-up, start and end check-ins, reminders that work when the app is closed, a wider layout, a full-page Settings, reminders set relative to the event (like 10 minutes before), add-on-selected-day, a Today button and titles in the calendar, editing repeating items (this one, this and following, all), flexible repeats (every N, chosen weekdays, an end date), places on events with address search, sync between your devices (encrypted so the server cannot read it), a connection allow-list, a problem log in Settings, and an optional app lock that encrypts data on the device and locks when idle, a way to change the sync code, encrypted backups (and backups no longer include the sync code), and no outside services (the chart, image and font files now come from this site), a welcome screen for new people, privacy policy and terms pages, and a health-information notice before period tracking is switched on, a layout built for phones (forms that scroll, bigger touch targets, a scrolling tab bar), and a friendly page-not-found screen, event end times, editing completed tasks, a new weekly balance view, backup and restore, a New Task button that opens the full form, and UK-style dates, 24-hour time and a choice of Monday or Sunday as the first day of the week, plus calmer wording in the Report insights, Week and Day views on the Calendar tab, drag to reschedule, bold day numbers at the top of each calendar day, a Recovery card with regular backup reminders, install-as-an-app support for Android, an optional, private way to log how you feel, and a tidier Settings page on larger screens.">
+<meta name="app-notes" content="Reminder popups, period heads-up, start and end check-ins, reminders that work when the app is closed, a wider layout, a full-page Settings, reminders set relative to the event (like 10 minutes before), add-on-selected-day, a Today button and titles in the calendar, editing repeating items (this one, this and following, all), flexible repeats (every N, chosen weekdays, an end date), places on events with address search, sync between your devices (encrypted so the server cannot read it), a connection allow-list, a problem log in Settings, and an optional app lock that encrypts data on the device and locks when idle, a way to change the sync code, encrypted backups (and backups no longer include the sync code), and no outside services (the chart, image and font files now come from this site), a welcome screen for new people, privacy policy and terms pages, and a health-information notice before period tracking is switched on, a layout built for phones (forms that scroll, bigger touch targets, a scrolling tab bar), and a friendly page-not-found screen, event end times, editing completed tasks, a new weekly balance view, backup and restore, a New Task button that opens the full form, and UK-style dates, 24-hour time and a choice of Monday or Sunday as the first day of the week, plus calmer wording in the Report insights, Week and Day views on the Calendar tab, drag to reschedule, bold day numbers at the top of each calendar day, a Recovery card with regular backup reminders, install-as-an-app support for Android, an optional, private way to log how you feel, and a tidier Settings page on larger screens, and a clearer flow for logging when a period starts and ends.">
 <script>
   // Runs before anything else in <head>, including the external libraries
   // below (which block parsing while they load) — otherwise the theme
@@ -4420,30 +4420,92 @@ function renderCalendarPlacementControl(){
 // defaultStart: optional default start date (e.g. a day picked in the full
 // calendar view), used only when creating a new entry.
 function renderPeriodLogForm(existing, defaultStart){
-  const ongoing = existing ? existing.end===null : false;
+  const recentNew = !existing && !!defaultStart && daysSince(defaultStart) >= 0 && daysSince(defaultStart) <= 9 && !currentOngoingPeriod();
+  const ongoing = existing ? existing.end===null : recentNew;
   const startPicker = createDatePicker(existing ? existing.start : (defaultStart || todayStr()));
-  const endPicker = createDatePicker(existing && existing.end ? existing.end : (defaultStart || todayStr()));
+  const endPicker = createDatePicker(existing && existing.end ? existing.end : periodDefaultEnd(existing ? existing.start : defaultStart));
   const ongoingCheckbox = el('input',{type:'checkbox', ...(ongoing?{checked:'checked'}:{})});
   const endFieldWrap = el('div',{class:'field', style:'position:relative; margin-bottom:10px;'+(ongoing?' display:none;':'')},
     el('label',{},'End'), endPicker.el);
   ongoingCheckbox.addEventListener('change',(e)=>{ endFieldWrap.style.display = e.target.checked ? 'none' : ''; });
+  const formError = el('div',{class:'settings-hint', role:'alert', style:'display:none; color:var(--danger); margin:0 0 8px;'});
 
   return el('div',{class:'period-log-form'},
     el('div',{class:'field', style:'position:relative; margin-bottom:10px;'}, el('label',{},'Start'), startPicker.el),
-    el('label',{class:'period-ongoing-check'}, ongoingCheckbox, ' Still ongoing'),
+    el('label',{class:'period-ongoing-check'}, ongoingCheckbox, ' Still going (add the end date later)'),
     endFieldWrap,
+    formError,
     el('div',{style:'display:flex; gap:8px;'},
       el('button',{class:'period-due-save', onclick: async ()=>{
         const start = startPicker.getValue();
         const end = ongoingCheckbox.checked ? null : endPicker.getValue();
+        const problem = periodFormProblem(existing, start, end);
+        if(problem){ formError.textContent = problem; formError.style.display = 'block'; return; }
         await saveLoggedPeriod(existing ? existing.id : null, start, end);
         state.periodLogFormOpen = false;
         state.periodEditingEntry = null;
-        render();
+        periodToast(existing ? 'Period updated.' : (end === null ? 'Period start logged.' : 'Period logged.'));
       }}, existing ? 'Save changes' : 'Save period'),
       el('button',{class:'period-form-cancel', onclick:()=>{ state.periodLogFormOpen=false; state.periodEditingEntry=null; render(); }}, 'Cancel')
     )
   );
+}
+
+// ---- Logging a period: start first, end later ----
+function periodEntryOn(ds){
+  const today = todayStr();
+  return state.period.loggedPeriods.find(p=>ds >= p.start && ds <= (p.end || today)) || null;
+}
+function periodDayNumber(entry, ds){ return Math.round((parseDate(ds) - parseDate(entry.start)) / DAY_MS) + 1; }
+function periodStatusText(ds, info){
+  if(!info || info.status !== 'confirmed') return '🩸 Period (predicted)';
+  const e = periodEntryOn(ds);
+  if(!e) return '🩸 Period (logged)';
+  const n = periodDayNumber(e, ds);
+  return e.end === null ? '🩸 Period · day ' + n + ' · still going' : '🩸 Period · day ' + n + ' of ' + periodDayNumber(e, e.end);
+}
+function periodDefaultEnd(start){
+  const d = parseDate(start || todayStr()); d.setDate(d.getDate() + Math.max(1, state.period.periodLength || 5) - 1);
+  const s = fmt(d), t = todayStr();
+  return s > t ? t : s;
+}
+function periodFormProblem(existing, start, end){
+  const today = todayStr();
+  if(!start) return 'Choose a start date.';
+  if(start > today) return 'The start date cannot be in the future. Log it on its first day.';
+  if(end !== null && end < start) return 'The end date cannot be before the start date.';
+  if(end !== null && end > today) return 'The end date cannot be in the future. You can add it once the period has finished.';
+  if(end === null){
+    const other = state.period.loggedPeriods.find(p=>p.end === null && (!existing || p.id !== existing.id));
+    if(other) return 'A period that started on ' + niceDateLong(other.start) + ' is still marked as ongoing. Add its end date first.';
+  }
+  return '';
+}
+function periodToast(text){
+  state.toast = { text:'✓ ' + text }; render();
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=>{ state.toast = null; document.querySelectorAll('.toast').forEach(n=>n.remove()); }, 3000);
+}
+async function endPeriodOn(entry, ds){
+  if(!entry || ds < entry.start || ds > todayStr()) return;
+  entry.end = ds;
+  await savePeriod();
+  periodToast('Period end logged.');
+}
+function renderPeriodDayActions(ds, panel){
+  if(state.periodLogFormOpen){ panel.appendChild(renderPeriodLogForm(state.periodEditingEntry, ds)); return; }
+  const today = todayStr(), entry = periodEntryOn(ds);
+  const openForm = (e)=>{ state.periodEditingEntry = e; state.periodLogFormOpen = true; render(); };
+  if(entry){
+    if(entry.end === null){
+      panel.appendChild(el('div', {class:'period-edit-hint', style:'margin:6px 0;'}, 'Started ' + niceDateLong(entry.start) + '. Add the end date when it finishes.'));
+      panel.appendChild(el('button', {class:'period-primary-btn', onclick:()=>endPeriodOn(entry, ds)}, ds === today ? '🩸 Period ended today' : '🩸 Period ended on this day'));
+    }
+    panel.appendChild(el('button', {class:'period-secondary-btn', onclick:()=>openForm(entry)}, '✎ Change dates'));
+    return;
+  }
+  if(ds > today) return;
+  panel.appendChild(el('button', {class:'period-secondary-btn', onclick:()=>openForm(null)}, '🩸 Log period starting this day'));
 }
 
 function renderPeriodHistory(){
@@ -4560,15 +4622,11 @@ function renderCalendarSidePanel(){
     const periodInfo = periodDayInfo(ds);
     const phaseInfo = cyclePhaseInfo(ds);
     let statusText = null;
-    if(periodInfo){ statusText = periodInfo.status==='confirmed' ? '🩸 Period (confirmed)' : '🩸 Period (predicted)'; }
+    if(periodInfo){ statusText = periodStatusText(ds, periodInfo); }
     else if(phaseInfo){ statusText = phaseInfo.phase.charAt(0).toUpperCase()+phaseInfo.phase.slice(1)+' phase (estimated)'; }
     if(statusText){ panel.appendChild(el('div',{class:'calendar-side-status'}, statusText)); }
 
-    if(!state.periodLogFormOpen){
-      panel.appendChild(el('button',{class:'period-secondary-btn', onclick:()=>{ state.periodEditingEntry=null; state.periodLogFormOpen=true; render(); }}, '🩸 Log period starting this day'));
-    } else {
-      panel.appendChild(renderPeriodLogForm(state.periodEditingEntry, ds));
-    }
+    renderPeriodDayActions(ds, panel);
   } else if(state.period.enabled && mode==='pregnancy'){
     const pregInfo = pregnancyWeekInfo(ds);
     if(pregInfo){ panel.appendChild(el('div',{class:'calendar-side-status'}, `Week ${pregInfo.week} · Trimester ${pregInfo.trimester}`)); }
