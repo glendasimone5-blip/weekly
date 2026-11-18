@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob:; connect-src 'self' https://weekly-push.glendasimone5.workers.dev https://nominatim.openstreetmap.org; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
 <title>Weekly — Task Console</title>
-<meta name="app-version" content="2026-11-17a">
+<meta name="app-version" content="2026-11-18a">
 <meta name="theme-color" content="#12142C">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" type="image/svg+xml" href="icons/icon.svg">
@@ -16,7 +16,7 @@ if('serviceWorker' in navigator && location.protocol === 'https:'){ window.addEv
 </script>
 <meta name="push-server" content="https://weekly-push.glendasimone5.workers.dev">
 <meta name="vapid-public" content="BC-oohRYdwdxzqXouwUBrQaCByRvzuUjy8b4DJceMHyCqO3XHOEfJklA7L0F82DayZs8B2XPIiYBkvV8MpSXRt8">
-<meta name="app-notes" content="Reminder popups, period heads-up, start and end check-ins, reminders that work when the app is closed, a wider layout, a full-page Settings, reminders set relative to the event (like 10 minutes before), add-on-selected-day, a Today button and titles in the calendar, editing repeating items (this one, this and following, all), flexible repeats (every N, chosen weekdays, an end date), places on events with address search, sync between your devices (encrypted so the server cannot read it), a connection allow-list, a problem log in Settings, and an optional app lock that encrypts data on the device and locks when idle, a way to change the sync code, encrypted backups (and backups no longer include the sync code), and no outside services (the chart, image and font files now come from this site), a welcome screen for new people, privacy policy and terms pages, and a health-information notice before period tracking is switched on, a layout built for phones (forms that scroll, bigger touch targets, a scrolling tab bar), and a friendly page-not-found screen, event end times, editing completed tasks, a new weekly balance view, backup and restore, a New Task button that opens the full form, and UK-style dates, 24-hour time and a choice of Monday or Sunday as the first day of the week, plus calmer wording in the Report insights, Week and Day views on the Calendar tab, drag to reschedule, bold day numbers at the top of each calendar day, a Recovery card with regular backup reminders, install-as-an-app support for Android, an optional, private way to log how you feel, and a tidier Settings page on larger screens, a clearer flow for logging when a period starts and ends, and periods that keep counting until you log when they ended, and shared spaces for sharing chosen tasks and events with other people through a code.">
+<meta name="app-notes" content="Reminder popups, period heads-up, start and end check-ins, reminders that work when the app is closed, a wider layout, a full-page Settings, reminders set relative to the event (like 10 minutes before), add-on-selected-day, a Today button and titles in the calendar, editing repeating items (this one, this and following, all), flexible repeats (every N, chosen weekdays, an end date), places on events with address search, sync between your devices (encrypted so the server cannot read it), a connection allow-list, a problem log in Settings, and an optional app lock that encrypts data on the device and locks when idle, a way to change the sync code, encrypted backups (and backups no longer include the sync code), and no outside services (the chart, image and font files now come from this site), a welcome screen for new people, privacy policy and terms pages, and a health-information notice before period tracking is switched on, a layout built for phones (forms that scroll, bigger touch targets, a scrolling tab bar), and a friendly page-not-found screen, event end times, editing completed tasks, a new weekly balance view, backup and restore, a New Task button that opens the full form, and UK-style dates, 24-hour time and a choice of Monday or Sunday as the first day of the week, plus calmer wording in the Report insights, Week and Day views on the Calendar tab, drag to reschedule, bold day numbers at the top of each calendar day, a Recovery card with regular backup reminders, install-as-an-app support for Android, an optional, private way to log how you feel, and a tidier Settings page on larger screens, a clearer flow for logging when a period starts and ends, and periods that keep counting until you log when they ended, and shared spaces for sharing chosen tasks and events with other people through a code, with names that must be set before sharing, owners who control deleting and cancelling shared items, and replies for events saying you can’t make it.">
 <script>
   // Runs before anything else in <head>, including the external libraries
   // below (which block parsing while they load) — otherwise the theme
@@ -637,6 +637,8 @@ if('serviceWorker' in navigator && location.protocol === 'https:'){ window.addEv
   .task.priority{ border-left:3px solid var(--accent); }
   .task.done{ opacity:0.5; }
   .task.done .title{ text-decoration:line-through; }
+  .task.cancelled .title{ text-decoration:line-through; }
+  .task.cancelled{ opacity:0.75; }
 
   .checkbox{
     width:19px; height:19px; border-radius:5px; border:1.5px solid var(--border);
@@ -2426,6 +2428,7 @@ function toggleSubtaskExpanded(taskId){
 async function toggleTask(id){
   const t = state.tasks.find(x=>x.id===id);
   if(!t) return;
+  if(t.spaceId && !t.completed && !spaceNeedName()) return;
   t.completed = !t.completed;
   t.completedAt = t.completed ? todayStr() : null;
   if(t.spaceId){ if(t.completed) t.completedBy = spaceMeName(); else delete t.completedBy; }
@@ -4011,13 +4014,64 @@ async function loadSpaces(){
 async function saveSpaces(){ try{ await storageSet('spaces', JSON.stringify(spacesStore)); }catch(e){} }
 function spaceById(sid){ return spacesStore.list.find(x=>x.sid === sid) || null; }
 function spaceMeId(){ if(!spacesStore.me.id) spacesStore.me.id = 'm' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8); return spacesStore.me.id; }
-function spaceMeName(){ return spacesStore.me.name || 'Someone'; }
+function spaceMeName(){ return spacesStore.me.name || ''; }
+// Every shared action that shows a name needs one. Asks once, and does nothing if the person declines.
+function spaceNeedName(){
+  if(spacesStore.me.name) return true;
+  const n = cleanName(prompt('Your name for shared spaces.\n\nOther people in the space will see it next to what you add, tick or reply to.', ''), 30);
+  if(!n) return false;
+  spacesStore.me.name = n; spaceMeId(); saveSpaces();
+  return true;
+}
+// Ownership is a courtesy kept by the app's own screens, not a security feature: someone with a modified copy of the app
+// and the code could still change anything. The owner is whoever first shared the item; the person who made the space can always step in.
+function spaceCanManage(t){
+  if(!t || !t.spaceId) return true;
+  const sp = spaceById(t.spaceId);
+  if(!sp) return true;
+  return !!sp.creator || !t.ownerId || t.ownerId === spacesStore.me.id;
+}
+function spaceBlocked(t, what){
+  const sp = spaceById(t.spaceId);
+  alert('Only ' + (t.ownerName || 'the person who added it') + ' (who added this) or the person who made \u201c' + (sp ? sp.name : 'the space') + '\u201d can ' + what + ' it for everyone.' + (t.type === 'event' ? '\n\nYou can tell people you can\u2019t make it from the event\u2019s edit screen.' : ''));
+}
+function spaceRespFor(t){ const sp = spaceById(t.spaceId), r = sp && sp.resp && sp.resp[t.id]; return r ? Object.values(r).filter(x=>x && x.no) : []; }
+function spaceIAmOut(t){ const sp = spaceById(t.spaceId), r = sp && sp.resp && sp.resp[t.id] && sp.resp[t.id][spacesStore.me.id]; return !!(r && r.no); }
+// Replies are kept per person (not on the item), so two people replying at the same moment both count.
+async function spaceSetOut(id, on){
+  const t = state.tasks.find(x=>x.id === id), sp = t && spaceById(t.spaceId);
+  if(!sp || !spaceNeedName()) return;
+  (sp.resp = sp.resp || {})[id] = sp.resp[id] || {};
+  sp.resp[id][spaceMeId()] = { n:spaceMeName(), u:Date.now(), no:!!on };
+  await saveSpaces(); scheduleSpaceSync();
+  state.modalOpen = false; render();
+}
+async function spaceSetCancelled(id, on){
+  const t = state.tasks.find(x=>x.id === id);
+  if(!t || !t.spaceId) return;
+  if(!spaceCanManage(t)) return spaceBlocked(t, 'cancel');
+  if(on){ if(!spaceNeedName()) return; t.cancelled = true; t.cancelledBy = spaceMeName(); }
+  else { delete t.cancelled; delete t.cancelledBy; }
+  await saveTasks();
+  state.modalOpen = false; render();
+}
+function spaceItemActions(t){
+  const sp = spaceById(t.spaceId), isEv = t.type === 'event', can = spaceCanManage(t);
+  const btn = (label, fn)=> el('button',{type:'button', class:'quickadd-full-btn', onclick:fn}, label);
+  const row = el('div',{style:'display:flex; gap:8px; flex-wrap:wrap; margin-top:6px;'});
+  if(isEv) row.appendChild(spaceIAmOut(t) ? btn('I can make it after all', ()=>spaceSetOut(t.id, false)) : btn('I can\u2019t make it', ()=>spaceSetOut(t.id, true)));
+  if(isEv && can) row.appendChild(t.cancelled ? btn('Reinstate this event', ()=>spaceSetCancelled(t.id, false)) : btn('Cancel this event for everyone', ()=>spaceSetCancelled(t.id, true)));
+  return el('div',{class:'field'}, el('label',{}, 'This shared ' + (isEv ? 'event' : 'task')),
+    el('div',{class:'settings-hint'}, 'Added by ' + (t.ownerName || 'someone') + ' in \u201c' + sp.name + '\u201d. ' + (can ? 'You can delete it, cancel it or stop sharing it.' : 'Only ' + (t.ownerName || 'they') + ' or the person who made the space can delete it, cancel it or stop sharing it.')),
+    row.childNodes.length ? row : null);
+}
 function spaceStampItem(t, sid){ t.spaceId = sid; if(!t.ownerId){ t.ownerId = spaceMeId(); t.ownerName = spaceMeName(); } }
-function shareMark(t){ return t && t.spaceId ? '👥 ' : ''; }
+function shareMark(t){ return t && t.spaceId ? (t.cancelled ? '🚫 ' : '👥 ') : ''; }
 function shareBadge(t){
   if(!t || !t.spaceId) return null;
   const sp = spaceById(t.spaceId);
-  const text = '👥 ' + (sp ? sp.name : 'Shared (not joined here)') + (t.completed && t.completedBy ? ' · done by ' + t.completedBy : '');
+  const outs = t.type === 'event' ? spaceRespFor(t).map(x=>x.n || 'Someone') : [];
+  const text = '👥 ' + (sp ? sp.name : 'Shared (not joined here)') + (t.cancelled ? ' · 🚫 cancelled' + (t.cancelledBy ? ' by ' + t.cancelledBy : '') : '') + (t.completed && t.completedBy ? ' · done by ' + t.completedBy : '') + (outs.length ? ' · ' + outs.join(', ') + ' can’t make it' : '');
   const title = (sp ? 'Shared in ' + sp.name : 'Shared in a space this device has not joined') + (t.ownerName ? ' · added by ' + t.ownerName : '');
   return el('span',{class:'badge cat', title}, text);
 }
@@ -4050,11 +4104,22 @@ async function spaceStampLocal(sp){
 }
 function buildSpaceDoc(sp){
   const tasks = {}; spaceTasksOf(sp).forEach(t=>{ tasks[t.id] = t; });
-  return { v:1, sid:sp.sid, name:sp.docName || '', tasks, tombs:Object.assign({}, sp.st.tombs), unions:{ seriesSkips:spaceSkipsOf(sp) } };
+  const doc = { v:1, sid:sp.sid, name:sp.docName || '', tasks, tombs:Object.assign({}, sp.st.tombs), unions:{ seriesSkips:spaceSkipsOf(sp) } };
+  const resp = {}; Object.keys(sp.resp || {}).forEach(id=>{ if(tasks[id] && Object.keys(sp.resp[id]).length) resp[id] = sp.resp[id]; });
+  if(Object.keys(resp).length) doc.resp = resp;
+  return doc;
 }
 function mergeSpaceDocs(a, b){
   const m = mergeSyncDocs(a, b);
-  return { v:1, sid:a.sid || b.sid, name:b.name || a.name || '', tasks:m.tasks, tombs:m.tombs, unions:{ seriesSkips:(m.unions || {}).seriesSkips || {} } };
+  const resp = {};
+  [a.resp || {}, b.resp || {}].forEach(map=>Object.keys(map).forEach(id=>Object.keys(map[id] || {}).forEach(mid=>{
+    const x = map[id][mid], cur = (resp[id] || {})[mid];
+    if(x && (!cur || (x.u || 0) >= (cur.u || 0))) (resp[id] = resp[id] || {})[mid] = x;
+  })));
+  Object.keys(resp).forEach(id=>{ if(!m.tasks[id]) delete resp[id]; });
+  const out = { v:1, sid:a.sid || b.sid, name:b.name || a.name || '', tasks:m.tasks, tombs:m.tombs, unions:{ seriesSkips:(m.unions || {}).seriesSkips || {} } };
+  if(Object.keys(resp).length) out.resp = resp;
+  return out;
 }
 async function spaceApplyDoc(sp, doc){
   spaceApplying = true;
@@ -4066,7 +4131,7 @@ async function spaceApplyDoc(sp, doc){
     Object.keys(ds).forEach(k=>{ sk[k] = [...new Set([...(sk[k] || []), ...ds[k]])]; });
     migrateTaskFields();
     sp.st.hashes = {}; state.tasks.forEach(t=>{ if(t.spaceId === sp.sid) sp.st.hashes[t.id] = cyrb(stable(t)); });
-    sp.st.tombs = doc.tombs || {};
+    sp.st.tombs = doc.tombs || {}; sp.resp = doc.resp || {};
     await saveTasks(); await saveMeta(); await saveSpaces();
   } finally { spaceApplying = false; }
   topUpAllSeries();   // after the bookkeeping, so anything newly generated counts as a local change next time
@@ -5704,6 +5769,7 @@ function atLocal(dateStr, timeStr){
 // Every moment this item should alert: an optional fixed clock time, plus any "N minutes before".
 // Timed events count back from their start; everything else counts back from its set time or 9:00 AM.
 function reminderInstants(t){
+  if(t.cancelled) return [];
   const out = [];
   if(t.remindTime) out.push({ at: atLocal(t.dueDate, t.remindTime) });
   const leads = Array.isArray(t.leadReminders) ? t.leadReminders : [];
@@ -5726,7 +5792,7 @@ function reminderBadge(t){
   const parts = [];
   if(t.remindTime) parts.push(formatTime12h(t.remindTime));
   (Array.isArray(t.leadReminders) ? t.leadReminders : []).slice().sort((a,b)=>a-b).forEach(m=>parts.push(leadShort(m)));
-  return parts.length ? el('span',{class:'badge cat', title:'Reminders set'}, '🔔 '+parts.join(' · ')) : null;
+  return (parts.length && !t.cancelled) ? el('span',{class:'badge cat', title:'Reminders set'}, '🔔 '+parts.join(' · ')) : null;
 }
 
 /* ---- Editing and deleting repeating items: this one / this and following / all ---- */
@@ -5739,6 +5805,7 @@ function requestEdit(t){
   state.editingTask = t; state.modalOpen = true; render();
 }
 function requestDelete(t){
+  if(t.spaceId && !spaceCanManage(t)){ spaceBlocked(t, 'delete'); return; }
   if(isSeriesItem(t)){ state.scopeDialog = { kind:'delete', id:t.id }; render(); return; }
   const spDel = t.spaceId ? spaceById(t.spaceId) : null;
   if(confirm(spDel ? 'Delete this for everyone in \u201c' + spDel.name + '\u201d?\n\nIt will disappear from every device in the space.' : 'Delete this task?')) deleteTask(t.id);
@@ -5871,7 +5938,7 @@ function renderTask(t){
     ? el('div',{class:'event-marker', title:'Event — not something to check off'}, '📌')
     : el('div',{class:'checkbox'+(t.completed?' checked':'')+(justToggled?' pop':''), onclick:()=>toggleTask(t.id)}, t.completed?'✓':'');
 
-  const taskEl = el('div',{class:'task'+(overdue?' overdue':'')+(t.completed?' done':'')+(justToggled?' pop':'')+(t.priority?' priority':'')+(isEvent?' event-row':'')},
+  const taskEl = el('div',{class:'task'+(overdue?' overdue':'')+(t.completed?' done':'')+(t.cancelled?' cancelled':'')+(justToggled?' pop':'')+(t.priority?' priority':'')+(isEvent?' event-row':'')},
     marker,
     el('div',{class:'task-body'},
       el('div',{class:'title-row'},
@@ -6310,6 +6377,8 @@ function renderModal(){
       subtasks: currentType==='event' ? [] : subtaskEditor.getValue()
     };
     data.spaceId = shareSel.value; if(!data.spaceId) delete data.spaceId;
+    if(data.spaceId && !spaceNeedName()) return;
+    if(editing && editing.spaceId && (data.spaceId || '') !== editing.spaceId && !spaceCanManage(editing)){ spaceBlocked(editing, 'stop sharing'); return; }
     if(editing && editing.spaceId && (data.spaceId || '') !== editing.spaceId){
       const spOld = spaceById(editing.spaceId);
       if(!confirm('Stop sharing this' + (spOld ? ' in \u201c' + spOld.name + '\u201d' : '') + '?\n\nIt is removed from the space for everyone else. A repeating item changes as a whole series. You keep your own copy.')) return;
@@ -6343,6 +6412,7 @@ function renderModal(){
     priorityFieldWrap,
     el('div',{class:'field'}, el('label',{},'Category'), catSelect),
     shareField,
+    (editing && editing.spaceId && spaceById(editing.spaceId)) ? spaceItemActions(editing) : null,
     el('div',{class:'field', style:'position:relative;'}, dateLabel, datePicker.el),
     completedPicker ? el('div',{class:'field', style:'position:relative;'}, el('label',{},'Completed on'), completedPicker.el) : null,
     timeFieldWrap,
