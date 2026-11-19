@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob:; connect-src 'self' https://weekly-push.glendasimone5.workers.dev https://nominatim.openstreetmap.org; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
 <title>Weekly — Task Console</title>
-<meta name="app-version" content="2026-11-18b">
+<meta name="app-version" content="2026-11-18c">
 <meta name="theme-color" content="#12142C">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" type="image/svg+xml" href="icons/icon.svg">
@@ -16,7 +16,7 @@ if('serviceWorker' in navigator && location.protocol === 'https:'){ window.addEv
 </script>
 <meta name="push-server" content="https://weekly-push.glendasimone5.workers.dev">
 <meta name="vapid-public" content="BC-oohRYdwdxzqXouwUBrQaCByRvzuUjy8b4DJceMHyCqO3XHOEfJklA7L0F82DayZs8B2XPIiYBkvV8MpSXRt8">
-<meta name="app-notes" content="Reminder popups, period heads-up, start and end check-ins, reminders that work when the app is closed, a wider layout, a full-page Settings, reminders set relative to the event (like 10 minutes before), add-on-selected-day, a Today button and titles in the calendar, editing repeating items (this one, this and following, all), flexible repeats (every N, chosen weekdays, an end date), places on events with address search, sync between your devices (encrypted so the server cannot read it), a connection allow-list, a problem log in Settings, and an optional app lock that encrypts data on the device and locks when idle, a way to change the sync code, encrypted backups (and backups no longer include the sync code), and no outside services (the chart, image and font files now come from this site), a welcome screen for new people, privacy policy and terms pages, and a health-information notice before period tracking is switched on, a layout built for phones (forms that scroll, bigger touch targets, a scrolling tab bar), and a friendly page-not-found screen, event end times, editing completed tasks, a new weekly balance view, backup and restore, a New Task button that opens the full form, and UK-style dates, 24-hour time and a choice of Monday or Sunday as the first day of the week, plus calmer wording in the Report insights, Week and Day views on the Calendar tab, drag to reschedule, bold day numbers at the top of each calendar day, a Recovery card with regular backup reminders, install-as-an-app support for Android, an optional, private way to log how you feel, and a tidier Settings page on larger screens, a clearer flow for logging when a period starts and ends, and periods that keep counting until you log when they ended, and shared spaces for sharing chosen tasks and events with other people through a code, with names that must be set before sharing, owners who control deleting and cancelling shared items, and replies for events saying you can’t make it, and an activity list for each shared space with a notice when others change things and a Restore button for deleted items.">
+<meta name="app-notes" content="Reminder popups, period heads-up, start and end check-ins, reminders that work when the app is closed, a wider layout, a full-page Settings, reminders set relative to the event (like 10 minutes before), add-on-selected-day, a Today button and titles in the calendar, editing repeating items (this one, this and following, all), flexible repeats (every N, chosen weekdays, an end date), places on events with address search, sync between your devices (encrypted so the server cannot read it), a connection allow-list, a problem log in Settings, and an optional app lock that encrypts data on the device and locks when idle, a way to change the sync code, encrypted backups (and backups no longer include the sync code), and no outside services (the chart, image and font files now come from this site), a welcome screen for new people, privacy policy and terms pages, and a health-information notice before period tracking is switched on, a layout built for phones (forms that scroll, bigger touch targets, a scrolling tab bar), and a friendly page-not-found screen, event end times, editing completed tasks, a new weekly balance view, backup and restore, a New Task button that opens the full form, and UK-style dates, 24-hour time and a choice of Monday or Sunday as the first day of the week, plus calmer wording in the Report insights, Week and Day views on the Calendar tab, drag to reschedule, bold day numbers at the top of each calendar day, a Recovery card with regular backup reminders, install-as-an-app support for Android, an optional, private way to log how you feel, and a tidier Settings page on larger screens, a clearer flow for logging when a period starts and ends, and periods that keep counting until you log when they ended, and shared spaces for sharing chosen tasks and events with other people through a code, with names that must be set before sharing, owners who control deleting and cancelling shared items, and replies for events saying you can’t make it, and an activity list for each shared space with a notice when others change things a Restore button for deleted items, and calendar files (.ics) so people on other calendars can see your events.">
 <script>
   // Runs before anything else in <head>, including the external libraries
   // below (which block parsing while they load) — otherwise the theme
@@ -3236,6 +3236,114 @@ async function restoreEncryptedFromText(text, pass){
   catch(e){ return backupMsg('That passphrase did not open the backup, or the file is damaged.'); }
   await applyBackupPayload(payload);
 }
+/* ============================ CALENDAR FILE (.ics) ============================ */
+// Writes a standard calendar file that Google Calendar, Outlook and Apple Calendar can read. It is made on this device and
+// only saved or shared when you choose. Every occurrence of a repeating item is written out as its own event, so the file
+// matches what Weekly shows (including dates you moved or skipped). Times are "floating": the same clock time wherever the
+// file is opened. Period, pregnancy and symptom information is not part of any item, so it can never end up in the file.
+let icsOpts = { tasks:false, scope:'upcoming' }, icsMsg = '';
+function icsEscape(s){ return String(s == null ? '' : s).replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n'); }
+function icsFold(line){   // lines are at most 75 bytes; continuation lines start with one space
+  const enc = new TextEncoder();
+  if(enc.encode(line).length <= 75) return line;
+  const out = []; let cur = '', bytes = 0;
+  for(const ch of line){
+    const b = enc.encode(ch).length;
+    if(bytes + b > 75){ out.push(cur); cur = ' '; bytes = 1; }
+    cur += ch; bytes += b;
+  }
+  out.push(cur);
+  return out.join('\r\n');
+}
+function icsPad(n){ return String(n).padStart(2, '0'); }
+function icsFromMs(ms){ const d = new Date(ms); return '' + d.getFullYear() + icsPad(d.getMonth() + 1) + icsPad(d.getDate()) + 'T' + icsPad(d.getHours()) + icsPad(d.getMinutes()) + icsPad(d.getSeconds()); }
+function icsUtc(ms){ return new Date(ms).toISOString().replace(/[-:]/g, '').replace(/\.\d+/, ''); }
+function icsItem(t, stamp){
+  const L = ['BEGIN:VEVENT'];
+  L.push('UID:' + String(t.id).replace(/[^A-Za-z0-9~_.-]/g, '') + '@weekly-app');
+  L.push('DTSTAMP:' + stamp);
+  if(t.type === 'event' && t.time){
+    const s = atLocal(t.dueDate, t.time);
+    let e = t.endTime ? atLocal(t.dueDate, t.endTime) : s + 3600000;
+    if(t.endTime && e <= s) e += 86400000;   // ends after midnight
+    L.push('DTSTART:' + icsFromMs(s));
+    L.push('DTEND:' + icsFromMs(e));
+  } else {
+    const nx = parseDate(t.dueDate); nx.setDate(nx.getDate() + 1);
+    L.push('DTSTART;VALUE=DATE:' + t.dueDate.replace(/-/g, ''));
+    L.push('DTEND;VALUE=DATE:' + fmt(nx).replace(/-/g, ''));
+  }
+  L.push('SUMMARY:' + icsEscape((t.type === 'event' ? '' : (t.completed ? '\u2611 ' : '\u2610 ')) + (t.title || 'Untitled')));
+  if(t.location) L.push('LOCATION:' + icsEscape(t.location));
+  const subs = (t.subtasks || []).map(s=>'- ' + (s.completed ? '[x] ' : '[ ] ') + s.title);
+  const desc = [t.notes || '', ...subs].filter(Boolean).join('\n');
+  if(desc) L.push('DESCRIPTION:' + icsEscape(desc));
+  if(t.category) L.push('CATEGORIES:' + icsEscape(t.category));
+  if(t.priority) L.push('PRIORITY:1');
+  if(t.cancelled) L.push('STATUS:CANCELLED');
+  if(t.type !== 'event') L.push('TRANSP:TRANSPARENT');
+  const now = Date.now();
+  reminderInstants(t).filter(o=>o.at > now).slice(0, 3).forEach(o=>{
+    L.push('BEGIN:VALARM', 'ACTION:DISPLAY', 'DESCRIPTION:Reminder', 'TRIGGER;VALUE=DATE-TIME:' + icsUtc(o.at), 'END:VALARM');
+  });
+  L.push('END:VEVENT');
+  return L;
+}
+function buildIcs(items){
+  const stamp = icsUtc(Date.now());
+  const L = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Weekly//Weekly planner//EN', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH', 'X-WR-CALNAME:Weekly'];
+  items.forEach(t=>{ icsItem(t, stamp).forEach(x=>L.push(x)); });
+  L.push('END:VCALENDAR');
+  return L.map(icsFold).join('\r\n') + '\r\n';
+}
+function icsPick(o){
+  const today = todayStr();
+  return state.tasks.filter(t=>{
+    if(!t.dueDate) return false;
+    if(t.type !== 'event' && !o.tasks) return false;
+    if(o.scope === 'upcoming' && (t.dueDate < today || (t.type !== 'event' && t.completed))) return false;
+    return true;
+  }).sort((a, b)=>a.dueDate.localeCompare(b.dueDate) || (a.time || '').localeCompare(b.time || ''));
+}
+function icsDownload(text, name){
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([text], { type:'text/calendar' }));
+  a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href), 1000);
+}
+// One event: the phone's share sheet where there is one (so it can go straight to a calendar app), otherwise a download.
+async function icsShare(text, name){
+  try{
+    const f = new File([text], name, { type:'text/calendar' });
+    if(navigator.canShare && navigator.canShare({ files:[f] })){ await navigator.share({ files:[f], title:name }); return; }
+  }catch(e){ if(e && e.name === 'AbortError') return; }
+  icsDownload(text, name);
+}
+function icsFileName(t){ return ((t.title || 'event').replace(/[^\w\- ]+/g, '').trim().slice(0, 40) || 'event') + '.ics'; }
+function icsEventButton(t){
+  return el('div',{class:'field'}, el('label',{}, 'Calendar'),
+    el('button',{type:'button', class:'quickadd-full-btn', onclick:()=>icsShare(buildIcs([t]), icsFileName(t))}, 'Add to another calendar (.ics)'),
+    el('div',{class:'settings-hint', style:'margin-top:5px;'}, 'Sends this one event as a calendar file. For a repeating event it sends just this date. It is a copy: later changes in Weekly do not update it.'));
+}
+function calendarFileSection(){
+  const sec = el('div',{class:'settings-section'}, el('div',{class:'settings-section-title'}, 'Calendar file'));
+  sec.appendChild(el('div',{class:'settings-hint', style:'margin-bottom:8px;'}, 'Save your events as a standard calendar file (.ics) that Google Calendar, Outlook and Apple Calendar can open, so people who do not use Weekly can see them. The file is made on this device and goes nowhere unless you send it. It is a copy: changes you make later in Weekly do not update it, and a repeating event is written out date by date. Period, pregnancy and symptom information is never included.'));
+  const scope = el('select',{}, el('option',{value:'upcoming'}, 'From today onwards'), el('option',{value:'all'}, 'Everything, including the past'));
+  scope.value = icsOpts.scope; scope.onchange = ()=>{ icsOpts.scope = scope.value; };
+  const cb = el('input',{type:'checkbox'}); cb.checked = icsOpts.tasks; cb.onchange = ()=>{ icsOpts.tasks = cb.checked; };
+  sec.appendChild(el('div',{class:'field'}, el('label',{}, 'Which dates'), scope));
+  sec.appendChild(el('label',{style:'display:flex; gap:8px; align-items:center; margin:8px 0; font-size:13px;'}, cb, 'Also include tasks, as all-day items'));
+  sec.appendChild(el('button',{class:'settings-action-btn', onclick:()=>{
+    const items = icsPick(icsOpts);
+    if(!items.length){ icsMsg = 'There is nothing to save for those choices.'; render(); return; }
+    icsDownload(buildIcs(items), 'weekly-calendar-' + todayStr() + '.ics');
+    icsMsg = 'Saved ' + items.length + ' item' + (items.length === 1 ? '' : 's') + ' to a calendar file.'; render();
+  }}, 'Save calendar file'));
+  if(icsMsg) sec.appendChild(el('div',{class:'settings-hint', style:'margin-top:8px; color:var(--text);'}, icsMsg));
+  return sec;
+}
+
 function encryptedBackupSection(){
   const sec = el('div',{class:'settings-section'}, el('div',{class:'settings-section-title'}, 'Encrypted backup'));
   if(typeof crypto === 'undefined' || !crypto.subtle){ sec.appendChild(el('div',{class:'settings-hint'}, 'Not available in this browser or when opened as a file.')); return sec; }
@@ -3423,6 +3531,7 @@ function renderSettingsModal(){
     ),
 
     encryptedBackupSection(),
+    calendarFileSection(),
     lockSettingsSection(),
     syncSettingsSection(),
     spacesSettingsSection(),
@@ -3452,7 +3561,7 @@ const SETTINGS_TABS = [
   ['general',   'General',            ['App Name', 'Theme', 'Dates and time']],
   ['reminders', 'Reminders',          ['Notifications']],
   ['health',    'Health',             ['Health Tracking', 'How you feel']],
-  ['backup',    'Backup and recovery',['Your data and recovery', 'Backup', 'Encrypted backup']],
+  ['backup',    'Backup and recovery',['Your data and recovery', 'Backup', 'Encrypted backup', 'Calendar file']],
   ['privacy',   'Privacy and sync',   ['App lock', 'Sync between devices', 'Shared spaces']],
   ['about',     'About and data',     ['Diagnostics', 'About and legal', 'Data']]
 ];
@@ -6555,6 +6664,7 @@ function renderModal(){
     el('div',{class:'field'}, el('label',{},'Category'), catSelect),
     shareField,
     (editing && editing.spaceId && spaceById(editing.spaceId)) ? spaceItemActions(editing) : null,
+    (editing && editing.type === 'event') ? icsEventButton(editing) : null,
     el('div',{class:'field', style:'position:relative;'}, dateLabel, datePicker.el),
     completedPicker ? el('div',{class:'field', style:'position:relative;'}, el('label',{},'Completed on'), completedPicker.el) : null,
     timeFieldWrap,
