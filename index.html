@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob:; connect-src 'self' https://weekly-push.glendasimone5.workers.dev https://nominatim.openstreetmap.org; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
 <title>Weekly — Task Console</title>
-<meta name="app-version" content="2026-11-18a">
+<meta name="app-version" content="2026-11-18b">
 <meta name="theme-color" content="#12142C">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" type="image/svg+xml" href="icons/icon.svg">
@@ -16,7 +16,7 @@ if('serviceWorker' in navigator && location.protocol === 'https:'){ window.addEv
 </script>
 <meta name="push-server" content="https://weekly-push.glendasimone5.workers.dev">
 <meta name="vapid-public" content="BC-oohRYdwdxzqXouwUBrQaCByRvzuUjy8b4DJceMHyCqO3XHOEfJklA7L0F82DayZs8B2XPIiYBkvV8MpSXRt8">
-<meta name="app-notes" content="Reminder popups, period heads-up, start and end check-ins, reminders that work when the app is closed, a wider layout, a full-page Settings, reminders set relative to the event (like 10 minutes before), add-on-selected-day, a Today button and titles in the calendar, editing repeating items (this one, this and following, all), flexible repeats (every N, chosen weekdays, an end date), places on events with address search, sync between your devices (encrypted so the server cannot read it), a connection allow-list, a problem log in Settings, and an optional app lock that encrypts data on the device and locks when idle, a way to change the sync code, encrypted backups (and backups no longer include the sync code), and no outside services (the chart, image and font files now come from this site), a welcome screen for new people, privacy policy and terms pages, and a health-information notice before period tracking is switched on, a layout built for phones (forms that scroll, bigger touch targets, a scrolling tab bar), and a friendly page-not-found screen, event end times, editing completed tasks, a new weekly balance view, backup and restore, a New Task button that opens the full form, and UK-style dates, 24-hour time and a choice of Monday or Sunday as the first day of the week, plus calmer wording in the Report insights, Week and Day views on the Calendar tab, drag to reschedule, bold day numbers at the top of each calendar day, a Recovery card with regular backup reminders, install-as-an-app support for Android, an optional, private way to log how you feel, and a tidier Settings page on larger screens, a clearer flow for logging when a period starts and ends, and periods that keep counting until you log when they ended, and shared spaces for sharing chosen tasks and events with other people through a code, with names that must be set before sharing, owners who control deleting and cancelling shared items, and replies for events saying you can’t make it.">
+<meta name="app-notes" content="Reminder popups, period heads-up, start and end check-ins, reminders that work when the app is closed, a wider layout, a full-page Settings, reminders set relative to the event (like 10 minutes before), add-on-selected-day, a Today button and titles in the calendar, editing repeating items (this one, this and following, all), flexible repeats (every N, chosen weekdays, an end date), places on events with address search, sync between your devices (encrypted so the server cannot read it), a connection allow-list, a problem log in Settings, and an optional app lock that encrypts data on the device and locks when idle, a way to change the sync code, encrypted backups (and backups no longer include the sync code), and no outside services (the chart, image and font files now come from this site), a welcome screen for new people, privacy policy and terms pages, and a health-information notice before period tracking is switched on, a layout built for phones (forms that scroll, bigger touch targets, a scrolling tab bar), and a friendly page-not-found screen, event end times, editing completed tasks, a new weekly balance view, backup and restore, a New Task button that opens the full form, and UK-style dates, 24-hour time and a choice of Monday or Sunday as the first day of the week, plus calmer wording in the Report insights, Week and Day views on the Calendar tab, drag to reschedule, bold day numbers at the top of each calendar day, a Recovery card with regular backup reminders, install-as-an-app support for Android, an optional, private way to log how you feel, and a tidier Settings page on larger screens, a clearer flow for logging when a period starts and ends, and periods that keep counting until you log when they ended, and shared spaces for sharing chosen tasks and events with other people through a code, with names that must be set before sharing, owners who control deleting and cancelling shared items, and replies for events saying you can’t make it, and an activity list for each shared space with a notice when others change things and a Restore button for deleted items.">
 <script>
   // Runs before anything else in <head>, including the external libraries
   // below (which block parsing while they load) — otherwise the theme
@@ -3059,6 +3059,7 @@ function render(){
   { const pn = renderPeriodNoticeBanner(); if(pn){ app.appendChild(pn); } }
   if(state.updateAvailable){ app.appendChild(renderUpdateBanner()); }
   if(!state.settingsOpen && !state.onb && backupDue()){ app.appendChild(renderBackupNudge()); }
+  if(!state.settingsOpen && !state.onb){ const spNote = renderSpaceNotice(); if(spNote) app.appendChild(spNote); }
   if(state.showBanner){ app.appendChild(renderBanner()); }
   else if(state.notifPermission === 'default'){ app.appendChild(renderEnableBanner()); }
 
@@ -4007,7 +4008,7 @@ async function loadSpaces(){
     const s = await storageGet('spaces');
     if(s){
       const d = JSON.parse(s.value);
-      spacesStore = { me:Object.assign({ id:'', name:'' }, d.me), list:(d.list || []).map(x=>Object.assign({}, x, { st:Object.assign(freshSpaceSync(), x.st) })) };
+      spacesStore = { me:Object.assign({ id:'', name:'' }, d.me), list:(d.list || []).map(x=>Object.assign({}, x, { st:Object.assign(freshSpaceSync(), x.st), seen:x.seen || Date.now() })) };
     }
   }catch(e){ /* keep empty */ }
 }
@@ -4090,23 +4091,155 @@ function spaceKeepSkips(m){
   return m;
 }
 function spacesForgetHashes(){ spacesStore.list.forEach(sp=>{ sp.st.hashes = {}; sp.st.version = 0; }); saveSpaces(); scheduleSpaceSync(); }
+/* ---- activity log: who did what in a space, kept inside the space's encrypted document ---- */
+const LOG_KEEP_MS = 30*86400000, LOG_MAX = 100, LOG_COPY_ENTRIES = 25, LOG_COPY_ITEMS = 60;
+function spaceLogAdd(sp, e){
+  sp.log = sp.log || [];
+  sp.log.push(Object.assign({ id:Date.now().toString(36) + Math.random().toString(36).slice(2, 7), at:Date.now(), by:spaceMeId(), n:spaceMeName() || 'Someone' }, e));
+}
+function spaceLogPrune(list){
+  const cut = Date.now() - LOG_KEEP_MS;
+  return (list || []).filter(e=>e && e.id && e.at > cut).sort((a, b)=> b.at - a.at || (a.id < b.id ? 1 : -1)).slice(0, LOG_MAX);
+}
+// Only the newest few deletions keep a copy of what was deleted (for Restore), so the document stays small.
+function spaceLogStrip(list){
+  let n = 0;
+  return list.map(e=>{ if(!e.cp) return e; n++; if(n <= LOG_COPY_ENTRIES) return e; const x = Object.assign({}, e); delete x.cp; return x; });
+}
+function mergeSpaceLogs(a, b){
+  const m = {};
+  [...(a || []), ...(b || [])].forEach(e=>{ if(!e || !e.id) return; const cur = m[e.id]; if(!cur || (!cur.cp && e.cp)) m[e.id] = e; });
+  return spaceLogStrip(spaceLogPrune(Object.values(m)));
+}
+function spaceWhen(d, tm){
+  if(!d) return 'no date';
+  let s = parseDate(d).toLocaleDateString(dateLocale(), { weekday:'short', day:'numeric', month:'short' });
+  if(tm) s += ' ' + shortTime(tm);
+  return s;
+}
+function spaceLogText(e){
+  const who = e.n || 'Someone', q = '\u201c' + (e.t || 'an item') + '\u201d';
+  switch(e.k){
+    case 'add': return who + ' added ' + q + (e.r ? ' (repeating)' : '');
+    case 'del': return who + ' deleted ' + q + (e.c > 1 ? ' and ' + (e.c - 1) + ' of its repeats' : '');
+    case 'tick': return who + ' ticked ' + q;
+    case 'untick': return who + ' unticked ' + q;
+    case 'move': return who + ' moved ' + q + ' from ' + spaceWhen((e.f || [])[0], (e.f || [])[1]) + ' to ' + spaceWhen((e.to || [])[0], (e.to || [])[1]);
+    case 'cancel': return who + ' cancelled ' + q;
+    case 'reinstate': return who + ' reinstated ' + q;
+    case 'unshare': return who + ' stopped sharing ' + q;
+    case 'restore': return who + ' restored ' + q;
+    case 'join': return who + ' joined the space';
+    case 'left': return who + ' left the space';
+  }
+  return who + ' changed something';
+}
+function spaceUnseen(sp){ return (sp.log || []).filter(e=>e.at > (sp.seen || 0) && e.by !== spacesStore.me.id).length; }
+function spaceOpenActivity(sid){
+  const sp = spaceById(sid); if(!sp) return;
+  sp.seen = Date.now(); saveSpaces();
+  state.spaceLogOpen = sid; state.settingsOpen = true; state.settingsTab = 'privacy'; render();
+}
+function renderSpaceNotice(){
+  const hit = spacesStore.list.map(sp=>({ sp, n:spaceUnseen(sp) })).find(x=>x.n > 0);
+  if(!hit) return null;
+  const sp = hit.sp, n = hit.n;
+  return el('div',{class:'banner', role:'region', 'aria-label':'Changes in a shared space'},
+    el('div',{class:'msg'}, el('b',{}, n + (n === 1 ? ' change' : ' changes') + ' in ' + sp.name + '. '), 'Someone else in the space changed something.'),
+    el('div',{class:'backup-nudge-actions'},
+      el('button',{type:'button', class:'habit-accept-btn', onclick:()=>spaceOpenActivity(sp.sid)}, 'See activity'),
+      el('button',{type:'button', class:'quickadd-full-btn', onclick:()=>{ sp.seen = Date.now(); saveSpaces(); render(); }}, 'Dismiss')));
+}
+function spaceActivityList(sp){
+  const wrap = el('div',{style:'margin-top:10px; border-top:1px solid var(--border); padding-top:8px;'});
+  wrap.appendChild(el('div',{class:'settings-hint'}, 'Everyone in this space can read this list, including the titles of deleted items. It keeps the last 30 days, up to 100 entries. Names are typed in by each person and are not checked, so an entry shows who a change says it came from, not proof of who made it.'));
+  const list = spaceLogPrune(sp.log), restored = {};
+  list.forEach(e=>{ if(e.k === 'restore' && e.ref) restored[e.ref] = 1; });
+  if(!list.length) wrap.appendChild(el('div',{class:'settings-hint', style:'margin-top:8px;'}, 'Nothing yet.'));
+  const box = el('div',{style:'max-height:320px; overflow:auto; margin-top:8px;'});
+  list.forEach(e=>{
+    const when = new Date(e.at).toLocaleString(dateLocale(), { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit', hour12: !use24h() });
+    const canRestore = e.k === 'del' && e.cp && e.cp.length && !restored[e.id];
+    box.appendChild(el('div',{style:'display:flex; gap:8px; align-items:baseline; justify-content:space-between; padding:5px 0; border-bottom:1px solid var(--border);'},
+      el('div',{style:'font-size:13px;'}, spaceLogText(e), el('span',{class:'settings-hint', style:'margin-left:6px;'}, when + (restored[e.id] ? ' \u00b7 restored' : ''))),
+      canRestore ? el('button',{type:'button', class:'quickadd-full-btn', onclick:()=>spaceRestore(sp.sid, e.id)}, 'Restore') : null));
+  });
+  wrap.appendChild(box);
+  return wrap;
+}
+// Brings deleted items back. They get a newer edit time than the deletion, so the normal merge makes them live again on every device.
+async function spaceRestore(sid, entryId){
+  const sp = spaceById(sid), e = sp && (sp.log || []).find(x=>x.id === entryId);
+  if(!e || !e.cp || !e.cp.length || !spaceNeedName()) return;
+  const have = new Set(state.tasks.map(t=>t.id));
+  let n = 0;
+  e.cp.forEach(c=>{
+    if(have.has(c.id)) return;
+    const t = Object.assign({}, c, { spaceId:sp.sid });
+    state.tasks.push(t); delete sp.st.tombs[c.id]; delete sp.st.hashes[c.id];
+    sp.st.snap[c.id] = spaceSnapOf(t); sp.st.copy[c.id] = spaceCloneItem(t);   // known already, so it is not logged as a new item
+    n++;
+  });
+  spaceLogAdd(sp, { k:'restore', t:e.t, ref:e.id, c:n });
+  await saveTasks(); await saveSpaces(); scheduleSpaceSync(); render();
+}
+function spaceSnapOf(t){ return { t:t.title, d:t.dueDate, tm:t.time || '', c:t.completed ? 1 : 0, x:t.cancelled ? 1 : 0, s:t.seriesId || '' }; }
+function spaceCloneItem(t){ const c = JSON.parse(JSON.stringify(t)); delete c._u; return c; }
 async function spaceStampLocal(sp){
-  // Same idea as private sync: changed items get a new edit time; items that vanished from the space become tombstones.
-  const now = Date.now(), st = sp.st, seen = {};
+  // Notice what changed since the last sync. Changed items get a new edit time; vanished items become tombstones.
+  // The same pass writes the activity log, from what this device's person changed.
+  const now = Date.now(), st = sp.st, seen = {}, quiet = !st.snapInit;
+  st.snap = st.snap || {}; st.copy = st.copy || {};
+  const knownSeries = {}, newSeries = {}, newOnes = [], unshared = [], gone = {};
+  Object.keys(st.snap).forEach(id=>{ if(st.snap[id].s) knownSeries[st.snap[id].s] = 1; });
   let stamped = 0;
   spaceTasksOf(sp).forEach(t=>{
     seen[t.id] = 1;
     const h = cyrb(stable(t));
-    if(st.hashes[t.id] !== h){ t._u = now; st.hashes[t.id] = h; stamped++; }
+    if(st.hashes[t.id] !== h){
+      const old = st.snap[t.id], nw = spaceSnapOf(t);
+      if(!quiet){
+        if(!old){
+          if(t.seriesId){ if(!knownSeries[t.seriesId] && !newSeries[t.seriesId]){ newSeries[t.seriesId] = 1; newOnes.push({ t:t.title, r:1 }); } }
+          else newOnes.push({ t:t.title, r:0 });
+        } else {
+          if(old.c !== nw.c) spaceLogAdd(sp, { k: nw.c ? 'tick' : 'untick', t:t.title });
+          if(old.x !== nw.x) spaceLogAdd(sp, { k: nw.x ? 'cancel' : 'reinstate', t:t.title });
+          if(old.d !== nw.d || old.tm !== nw.tm) spaceLogAdd(sp, { k:'move', t:t.title, f:[old.d, old.tm], to:[nw.d, nw.tm] });
+        }
+      }
+      t._u = now; st.hashes[t.id] = h; stamped++;
+      st.snap[t.id] = nw; st.copy[t.id] = spaceCloneItem(t);
+    } else if(!st.snap[t.id]){ st.snap[t.id] = spaceSnapOf(t); st.copy[t.id] = spaceCloneItem(t); }
   });
-  Object.keys(st.hashes).forEach(id=>{ if(!seen[id]){ st.tombs[id] = now; delete st.hashes[id]; } });
+  Object.keys(st.hashes).forEach(id=>{
+    if(seen[id]) return;
+    st.tombs[id] = now; delete st.hashes[id];
+    const snap = st.snap[id], cp = st.copy[id], cur = state.tasks.find(x=>x.id === id);
+    delete st.snap[id]; delete st.copy[id];
+    if(quiet || !snap) return;
+    if(cur){ unshared.push(snap.t); return; }
+    const key = snap.s || id;
+    (gone[key] = gone[key] || { t:snap.t, items:[] }).items.push(cp);
+  });
+  Object.keys(gone).forEach(k=>{
+    const g = gone[k], items = g.items.filter(Boolean), e = { k:'del', t:g.t, c:g.items.length };
+    if(items.length === g.items.length && items.length <= LOG_COPY_ITEMS) e.cp = items;
+    spaceLogAdd(sp, e);
+  });
+  unshared.forEach(t=>spaceLogAdd(sp, { k:'unshare', t }));
+  newOnes.forEach(o=>spaceLogAdd(sp, { k:'add', t:o.t, r:o.r }));
+  st.snapInit = true;
+  sp.log = spaceLogPrune(sp.log);
   if(stamped){ spaceApplying = true; try{ await saveTasks(); } finally { spaceApplying = false; } }
 }
+
 function buildSpaceDoc(sp){
   const tasks = {}; spaceTasksOf(sp).forEach(t=>{ tasks[t.id] = t; });
   const doc = { v:1, sid:sp.sid, name:sp.docName || '', tasks, tombs:Object.assign({}, sp.st.tombs), unions:{ seriesSkips:spaceSkipsOf(sp) } };
   const resp = {}; Object.keys(sp.resp || {}).forEach(id=>{ if(tasks[id] && Object.keys(sp.resp[id]).length) resp[id] = sp.resp[id]; });
   if(Object.keys(resp).length) doc.resp = resp;
+  const log = spaceLogStrip(spaceLogPrune(sp.log)); if(log.length) doc.log = log;
   return doc;
 }
 function mergeSpaceDocs(a, b){
@@ -4119,6 +4252,7 @@ function mergeSpaceDocs(a, b){
   Object.keys(resp).forEach(id=>{ if(!m.tasks[id]) delete resp[id]; });
   const out = { v:1, sid:a.sid || b.sid, name:b.name || a.name || '', tasks:m.tasks, tombs:m.tombs, unions:{ seriesSkips:(m.unions || {}).seriesSkips || {} } };
   if(Object.keys(resp).length) out.resp = resp;
+  const log = mergeSpaceLogs(a.log, b.log); if(log.length) out.log = log;
   return out;
 }
 async function spaceApplyDoc(sp, doc){
@@ -4132,6 +4266,10 @@ async function spaceApplyDoc(sp, doc){
     migrateTaskFields();
     sp.st.hashes = {}; state.tasks.forEach(t=>{ if(t.spaceId === sp.sid) sp.st.hashes[t.id] = cyrb(stable(t)); });
     sp.st.tombs = doc.tombs || {}; sp.resp = doc.resp || {};
+    sp.log = doc.log || [];
+    sp.st.snap = {}; sp.st.copy = {};
+    state.tasks.forEach(t=>{ if(t.spaceId === sp.sid){ sp.st.snap[t.id] = spaceSnapOf(t); sp.st.copy[t.id] = spaceCloneItem(t); } });
+    sp.st.snapInit = true;
     await saveTasks(); await saveMeta(); await saveSpaces();
   } finally { spaceApplying = false; }
   topUpAllSeries();   // after the bookkeeping, so anything newly generated counts as a local change next time
@@ -4205,7 +4343,7 @@ async function createSpace(spaceName, myName){
     spacesStore.me.name = myName; spaceMeId();
     const code = newSyncCode(), keys = await deriveSync(code);
     const sid = 's' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
-    const sp = { sid, name:spaceName, docName:spaceName, code, creator:true, st:freshSpaceSync() };
+    const sp = { sid, name:spaceName, docName:spaceName, code, creator:true, st:Object.assign(freshSpaceSync(), { snapInit:true }) };
     const p = await pushPost('/sync/put', { id:keys.id, expected:0, blob:await syncEncrypt(buildSpaceDoc(sp), keys.key) });
     if(p.status !== 200) throw new Error(p.status === 404 ? 'The reminder server needs its sync update first' : 'the server answered ' + p.status);
     sp.st.version = p.json.version; sp.st.localHash = cyrb(stable(buildSpaceDoc(sp), true)); sp.st.lastSync = Date.now();
@@ -4240,12 +4378,14 @@ async function joinSpace(codeText, myName){
     await spaceApplyDoc(sp, doc);
     sp.st.version = r.json.version; sp.st.localHash = cyrb(stable(buildSpaceDoc(sp), true)); sp.st.lastSync = Date.now();
     await saveSpaces();
+    sp.seen = Date.now(); spaceLogAdd(sp, { k:'join' }); await saveSpaces(); scheduleSpaceSync();
     spaceMsg(sp.sid, 'Joined. The items shared in this space now appear here.');
   }catch(e){ spaceMsg('', 'Could not join: ' + (e.message || e) + '.'); }
 }
 async function leaveSpace(sid){
   const sp = spaceById(sid); if(!sp) return;
   if(!confirm('Leave \u201c' + sp.name + '\u201d on this device?\n\nThe items from this space stay on this device as your own private items. People still in the space keep theirs, and copies on their devices stay where they are. You can rejoin later with the code.')) return;
+  if(!sp.gone){ spaceLogAdd(sp, { k:'left' }); await spaceSyncOne(sp, false); }
   state.tasks.forEach(t=>{ if(t.spaceId === sid){ delete t.spaceId; delete t.ownerId; delete t.ownerName; delete t.completedBy; } });
   spacesStore.list = spacesStore.list.filter(x=>x.sid !== sid); delete spaceKeys[sid];
   await saveSpaces(); await saveTasks();
@@ -4297,7 +4437,7 @@ function spacesSettingsSection(){
   const btn = (label, fn, primary)=> el('button',{class: primary ? 'settings-action-btn' : 'quickadd-full-btn', onclick: fn}, label);
   const inStyle = 'width:100%; background:var(--bg); border:1px solid var(--border); color:var(--text); border-radius:7px; padding:9px 11px; font-size:13px;';
   sec.appendChild(el('div',{class:'settings-hint', style:'margin-bottom:8px;'}, 'Share chosen tasks and events with other people, such as your family. Each space has its own code. Only the items you mark \u201cShare with\u201d go into it. Period, pregnancy and symptom information can never be shared.'));
-  sec.appendChild(el('div',{class:'settings-hint', style:'margin-bottom:10px;'}, 'Anyone with a space\u2019s code can see, edit and delete the shared items in it. Changing the code is the only way to remove someone, and what they already have stays on their devices. Names are typed in by each person and are not checked. Shared items sync through their space, not through your private sync, so join a space on each of your devices.'));
+  sec.appendChild(el('div',{class:'settings-hint', style:'margin-bottom:10px;'}, 'Anyone with a space\u2019s code can see, edit and delete the shared items in it. Changing the code is the only way to remove someone, and what they already have stays on their devices. Names are typed in by each person and are not checked. Shared items sync through their space, not through your private sync, so join a space on each of your devices. Each space also keeps a short activity list that everyone in it can read.'));
   const meInput = el('input',{type:'text', value:spacesStore.me.name, placeholder:'Your name in shared spaces', maxlength:'30', style:inStyle});
   sec.appendChild(el('div',{class:'settings-hint'}, 'Your name, as other people in a space will see it:'));
   sec.appendChild(meInput);
@@ -4317,9 +4457,11 @@ function spacesSettingsSection(){
         btn('Sync now', ()=>spaceSyncOne(sp, true), true),
         btn('Rename', ()=>renameSpace(sp.sid), false),
         btn('Remove someone (new code)', ()=>changeSpaceCode(sp.sid), false),
+        btn('Recent activity' + (spaceUnseen(sp) ? ' (' + spaceUnseen(sp) + ' new)' : ''), ()=>{ state.spaceLogOpen = state.spaceLogOpen === sp.sid ? null : sp.sid; if(state.spaceLogOpen){ sp.seen = Date.now(); saveSpaces(); } render(); }, false),
         btn('Leave this space', ()=>leaveSpace(sp.sid), false)
       ),
-      spaceMsgs[sp.sid] ? el('div',{class:'settings-hint', style:'margin-top:8px; color:var(--text);'}, spaceMsgs[sp.sid]) : null
+      spaceMsgs[sp.sid] ? el('div',{class:'settings-hint', style:'margin-top:8px; color:var(--text);'}, spaceMsgs[sp.sid]) : null,
+      state.spaceLogOpen === sp.sid ? spaceActivityList(sp) : null
     ));
   });
   const nameInput = el('input',{type:'text', placeholder:'Name for a new space, such as Family', maxlength:'40', style:inStyle + ' margin-top:10px;'});
